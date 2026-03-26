@@ -1,6 +1,6 @@
 import { getStoredTokens, storeTokens, clearTokens } from "./token-storage";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.nextgenintelligence.co.za";
 
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
