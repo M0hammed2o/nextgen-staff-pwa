@@ -14,6 +14,13 @@ interface StatusActionsProps {
  * Each status can also → CANCELLED
  */
 const STATUS_FLOW: Record<string, { label: string; next: OrderStatus; variant: string }[]> = {
+  // Delivery fee states — no standard status buttons; DeliveryFeePanel handles the action
+  PENDING_DELIVERY_FEE: [
+    { label: "Cancel", next: "CANCELLED", variant: "bg-destructive text-destructive-foreground" },
+  ],
+  FEE_SENT: [
+    { label: "Cancel", next: "CANCELLED", variant: "bg-destructive text-destructive-foreground" },
+  ],
   NEW: [
     { label: "Accept Order", next: "ACCEPTED", variant: "bg-primary text-primary-foreground" },
     { label: "Cancel", next: "CANCELLED", variant: "bg-destructive text-destructive-foreground" },

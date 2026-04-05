@@ -5,6 +5,7 @@ import { apiClient } from "@/lib/api";
 import type { Order } from "@/types";
 import { formatCurrency, formatDateTime, getStatusColor, cn } from "@/lib/utils";
 import StatusActions from "@/components/StatusActions";
+import DeliveryFeePanel from "@/components/DeliveryFeePanel";
 import KitchenSlip, { printKitchenSlip } from "@/components/KitchenSlip";
 import { useAuth } from "@/lib/auth";
 
@@ -166,6 +167,9 @@ export default function OrderDetail() {
             <span className="text-foreground">{formatCurrency(order.total_cents)}</span>
           </div>
         </div>
+
+        {/* Delivery Fee Panel — shown for PENDING_DELIVERY_FEE and FEE_SENT orders */}
+        <DeliveryFeePanel order={order} onUpdated={handleUpdated} />
 
         {/* Status Actions */}
         <div className="rounded-xl border border-border bg-card p-4">

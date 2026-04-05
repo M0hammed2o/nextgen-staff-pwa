@@ -66,6 +66,8 @@ export interface Order {
 
 // Backend valid statuses
 export type OrderStatus =
+  | "PENDING_DELIVERY_FEE"
+  | "FEE_SENT"
   | "NEW"
   | "ACCEPTED"
   | "IN_PROGRESS"
@@ -78,6 +80,10 @@ export interface StatusUpdateRequest {
   status: string;
   reason?: string;
   estimated_ready_minutes?: number;
+}
+
+export interface DeliveryFeeRequest {
+  delivery_fee_cents: number;
 }
 
 // Paginated response wrapper

@@ -58,6 +58,10 @@ export function timeAgo(dateStr: string | null | undefined): string {
 // Status colors — matches backend OrderStatus enum
 export function getStatusColor(status: string): string {
   switch (status) {
+    case "PENDING_DELIVERY_FEE":
+      return "bg-amber-100 text-amber-800";
+    case "FEE_SENT":
+      return "bg-amber-200 text-amber-900";
     case "NEW":
       return "bg-warning/20 text-warning";
     case "ACCEPTED":
