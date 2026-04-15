@@ -9,7 +9,7 @@ export default function CompletedOrders() {
 
   const { data: ordersRes, isLoading, error, refetch } = useQuery<PaginatedResponse<Order>>({
     queryKey: ["completed-orders"],
-    queryFn: () => apiClient.get<PaginatedResponse<Order>>("/v1/business/orders?status=COLLECTED"),
+    queryFn: () => apiClient.get<PaginatedResponse<Order>>("/v1/business/orders?status=COLLECTED,DELIVERED"),
   });
 
   const orders = ordersRes?.data ?? [];
