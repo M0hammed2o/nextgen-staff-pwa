@@ -14,7 +14,7 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!businessCode.trim() || !pin.trim()) {
-      setError("Please enter both business code and PIN");
+      setError("Please enter both your store code and PIN");
       return;
     }
     setError("");
@@ -41,18 +41,18 @@ export default function Login() {
           <div className="text-center">
             <h1 className="text-2xl font-bold text-foreground">Staff Login</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Enter your business code and PIN to continue
+              Enter your store code and PIN to continue
             </p>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
-            <label htmlFor="business-code" className="text-sm font-medium text-foreground">
-              Business Code
+            <label htmlFor="store-code" className="text-sm font-medium text-foreground">
+              Store Code
             </label>
             <input
-              id="business-code"
+              id="store-code"
               type="text"
               value={businessCode}
               onChange={(e) => setBusinessCode(e.target.value.toUpperCase())}
@@ -61,6 +61,7 @@ export default function Login() {
               autoCapitalize="characters"
               className="flex h-14 w-full rounded-lg border border-border bg-secondary px-4 text-lg font-semibold tracking-widest text-foreground placeholder:text-muted-foreground placeholder:font-normal placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-primary"
             />
+            <p className="text-xs text-muted-foreground">Provided by your manager</p>
           </div>
 
           <div className="space-y-2">
@@ -98,6 +99,9 @@ export default function Login() {
           </button>
         </form>
 
+        <p className="text-center text-xs text-muted-foreground">
+          Having trouble? Ask your manager for your store code and PIN.
+        </p>
         <p className="text-center text-xs text-muted-foreground">
           NextGen Intelligence © {new Date().getFullYear()}
         </p>

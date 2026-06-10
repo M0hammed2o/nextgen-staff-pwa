@@ -55,7 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (tokens?.refresh_token) {
         await apiClient.post("/v1/auth/logout", { refresh_token: tokens.refresh_token });
       }
-    } catch {}
+    } catch (e) {
+      // Logout API failure is non-fatal — user is cleared locally regardless.
+      // Log so Sentry can capture unusual cases (network down, token already revoked).
+      console.error("Logout API call failed:", e);
+    }
     clearTokens();
     setUser(null);
   }, []);

@@ -78,7 +78,10 @@ export async function apiFetch<T>(
       // Backend returns { error: { code, message, details } } — parse nested format
       message = body?.error?.message || body?.detail || body?.message || message;
       console.error(`API ${res.status}:`, body?.error || body);
-    } catch {}
+    } catch (parseError) {
+      // Response body is not JSON (e.g. empty 500 from a proxy). Log for Sentry.
+      console.error(`API ${res.status}: non-JSON error body`, parseError);
+    }
     throw { message, status: res.status };
   }
 
@@ -101,11 +104,14 @@ export function createSSEConnection(
       : url;
 
     const es = new EventSource(sseUrl);
-    es.onmessage = (e) => {
+    es.onmessage = (event) => {
       try {
-        const data = JSON.parse(e.data);
+        const data = JSON.parse(event.data);
         onMessage(data);
-      } catch {}
+      } catch (parseError) {
+        // Keepalive and empty SSE frames will trigger this — only warn on non-empty data.
+        if (event.data) console.warn("SSE: failed to parse message", parseError);
+      }
     };
     es.onerror = () => {
       onError?.();

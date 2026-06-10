@@ -41,7 +41,10 @@ export default function LiveOrders() {
           audioRef.current = new Audio(NEW_ORDER_SOUND_URL);
         }
         audioRef.current.play().catch(() => {});
-      } catch {}
+      } catch (e) {
+        // Audio may fail due to browser autoplay policy — non-fatal, warn only.
+        console.warn("New order audio alert failed:", e);
+      }
     }
     setLastCount(orders.length);
   }, [orders.length, lastCount]);
