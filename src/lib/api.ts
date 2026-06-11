@@ -89,37 +89,103 @@ export async function apiFetch<T>(
   return res.json();
 }
 
+/**
+ * SSE connection manager with automatic reconnect on token expiry.
+ *
+ * The browser's EventSource API cannot set custom headers, so the access
+ * token is passed as a URL query parameter (?token=).  When the token
+ * expires the server closes the connection with a 401-equivalent error.
+ * This manager detects that, refreshes the access token, then opens a
+ * fresh EventSource automatically.
+ *
+ * Reconnect strategy: up to MAX_RETRIES attempts with exponential back-off
+ * (1 s, 2 s, 4 s).  After that, onError() is called and polling takes over.
+ */
+const _SSE_MAX_RETRIES = 3;
+const _SSE_BASE_DELAY_MS = 1000;
+
+function _buildSseUrl(baseUrl: string, path: string, token: string | null): string {
+  const url = `${baseUrl}${path}`;
+  if (!token) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}token=${encodeURIComponent(token)}`;
+}
+
 export function createSSEConnection(
   path: string,
   onMessage: (data: unknown) => void,
   onError?: () => void
-): EventSource | null {
-  const tokens = getStoredTokens();
-  const url = `${BASE_URL}${path}`;
+): { close: () => void } {
+  let es: EventSource | null = null;
+  let retries = 0;
+  let stopped = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  try {
-    const separator = url.includes("?") ? "&" : "?";
-    const sseUrl = tokens?.access_token
-      ? `${url}${separator}token=${tokens.access_token}`
-      : url;
+  function open() {
+    if (stopped) return;
+    const tokens = getStoredTokens();
+    const url = _buildSseUrl(BASE_URL, path, tokens?.access_token ?? null);
 
-    const es = new EventSource(sseUrl);
+    try {
+      es = new EventSource(url);
+    } catch {
+      onError?.();
+      return;
+    }
+
     es.onmessage = (event) => {
+      retries = 0; // reset back-off on successful message
       try {
         const data = JSON.parse(event.data);
         onMessage(data);
       } catch (parseError) {
-        // Keepalive and empty SSE frames will trigger this — only warn on non-empty data.
         if (event.data) console.warn("SSE: failed to parse message", parseError);
       }
     };
+
     es.onerror = () => {
-      onError?.();
+      es?.close();
+      es = null;
+      if (stopped) return;
+
+      if (retries >= _SSE_MAX_RETRIES) {
+        console.warn("SSE: max retries reached, falling back to polling");
+        onError?.();
+        return;
+      }
+
+      const delay = _SSE_BASE_DELAY_MS * Math.pow(2, retries);
+      retries += 1;
+
+      retryTimer = setTimeout(async () => {
+        if (stopped) return;
+        // Attempt token refresh before reconnecting so the new URL carries a
+        // valid token.  If refresh fails we still reconnect — the server will
+        // return 401 again, triggering another retry until retries are exhausted.
+        if (getStoredTokens()?.refresh_token) {
+          if (!isRefreshing) {
+            isRefreshing = true;
+            refreshPromise = refreshAccessToken();
+          }
+          await refreshPromise;
+          isRefreshing = false;
+          refreshPromise = null;
+        }
+        open();
+      }, delay);
     };
-    return es;
-  } catch {
-    return null;
   }
+
+  open();
+
+  return {
+    close() {
+      stopped = true;
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      es?.close();
+      es = null;
+    },
+  };
 }
 
 export const apiClient = {

@@ -19,18 +19,18 @@ export default function LiveOrders() {
 
   const orders = ordersRes?.data ?? [];
 
-  // SSE with fallback
+  // SSE with automatic token-refresh reconnect; polling fallback on exhausted retries.
   useEffect(() => {
-    const es = createSSEConnection(
+    const conn = createSSEConnection(
       "/v1/business/orders/live/stream",
       () => {
         queryClient.invalidateQueries({ queryKey: ["live-orders"] });
       },
       () => {
-        // SSE failed, polling handles it
+        // All retries exhausted — polling (refetchInterval: 15s) takes over.
       }
     );
-    return () => es?.close();
+    return () => conn.close();
   }, [queryClient]);
 
   // Sound alert for new orders
