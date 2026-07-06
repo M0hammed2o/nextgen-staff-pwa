@@ -3,6 +3,8 @@ import type { Order, OrderStatus, StatusUpdateRequest } from "@/types";
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+type PaymentMethod = "CASH" | "CARD";
+
 interface StatusActionsProps {
   order: Order;
   onUpdated: () => void;
@@ -41,11 +43,16 @@ const STATUS_FLOW: Record<string, { label: string; next: OrderStatus; variant: s
 };
 
 export default function StatusActions({ order, onUpdated }: StatusActionsProps) {
-  const [loading, setLoading] = useState<OrderStatus | null>(null);
+  const [loading, setLoading] = useState<OrderStatus | string | null>(null);
   const [showCancel, setShowCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState("");
   const [error, setError] = useState("");
+
+  // Payment prompt state — shown after COLLECTED or DELIVERED
+  const [showPayment, setShowPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [paymentReference, setPaymentReference] = useState("");
 
   const actions = STATUS_FLOW[order.status] || [];
 
@@ -71,10 +78,39 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
         body.estimated_ready_minutes = parseInt(estimatedMinutes, 10);
       }
       await apiClient.post(`/v1/business/orders/${order.id}/status`, body);
-      onUpdated();
+      // After collection or delivery, ask for payment method
+      if (nextStatus === "COLLECTED" || nextStatus === "DELIVERED") {
+        setShowPayment(true);
+        setPaymentMethod(null);
+        setPaymentReference("");
+      } else {
+        onUpdated();
+      }
     } catch (err: unknown) {
       const msg = err && typeof err === "object" && "message" in err
         ? (err as { message: string }).message : "Status update failed";
+      setError(msg);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handlePayment = async () => {
+    if (!paymentMethod) return;
+    if (paymentMethod === "CARD" && !paymentReference.trim()) return;
+    setLoading("payment");
+    setError("");
+    try {
+      await apiClient.patch(`/v1/business/orders/${order.id}/payment`, {
+        payment_status: "PAID",
+        payment_method: paymentMethod,
+        payment_reference: paymentMethod === "CARD" ? paymentReference.trim() : null,
+      });
+      setShowPayment(false);
+      onUpdated();
+    } catch (err: unknown) {
+      const msg = err && typeof err === "object" && "message" in err
+        ? (err as { message: string }).message : "Payment recording failed";
       setError(msg);
     } finally {
       setLoading(null);
@@ -101,6 +137,55 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
       setLoading(null);
     }
   };
+
+  if (showPayment) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm font-semibold text-foreground">How was payment made?</p>
+        <div className="flex gap-3">
+          {(["CASH", "CARD"] as PaymentMethod[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setPaymentMethod(m)}
+              className={cn(
+                "flex h-12 flex-1 items-center justify-center rounded-lg border text-sm font-medium transition-colors",
+                paymentMethod === m
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-secondary text-foreground",
+              )}
+            >
+              {m === "CASH" ? "💵 Cash" : "💳 Card"}
+            </button>
+          ))}
+        </div>
+        {paymentMethod === "CARD" && (
+          <input
+            type="text"
+            value={paymentReference}
+            onChange={(e) => setPaymentReference(e.target.value)}
+            placeholder="Card / payment reference"
+            className="flex h-12 w-full rounded-lg border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <button
+          onClick={handlePayment}
+          disabled={
+            !paymentMethod ||
+            (paymentMethod === "CARD" && !paymentReference.trim()) ||
+            loading === "payment"
+          }
+          className="flex h-14 w-full items-center justify-center rounded-lg bg-[hsl(var(--success))] text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {loading === "payment" ? (
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          ) : (
+            "Mark as Paid ✓"
+          )}
+        </button>
+      </div>
+    );
+  }
 
   if (showCancel) {
     return (

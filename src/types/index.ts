@@ -2,6 +2,12 @@
 // Staff types — aligned to REAL backend schemas
 // ═══════════════════════════════════════════════════════════════
 
+export interface SavedBusiness {
+  business_id: string;
+  business_code: string;
+  business_name: string;
+}
+
 export interface AuthTokens {
   access_token: string;
   refresh_token: string;
@@ -44,6 +50,10 @@ export interface Order {
   id: string;
   order_number: string;
   status: OrderStatus;
+  payment_status: string;
+  payment_method: string | null;
+  payment_reference: string | null;
+  paid_at: string | null;
   order_mode: string;
   source: string;
   customer_name: string | null;
