@@ -56,7 +56,15 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
 
   const actions = STATUS_FLOW[order.status] || [];
 
-  if (actions.length === 0) {
+  // Payment is needed whenever the order is terminal (COLLECTED or DELIVERED)
+  // and has not been paid yet — regardless of how the component got here
+  // (newly clicked OR navigated back after a refresh).
+  const isTerminal = order.status === "COLLECTED" || order.status === "DELIVERED";
+  const needsPayment = isTerminal && (order.payment_status ?? "PENDING") !== "PAID";
+
+  // Only show "no further actions" when the status has no buttons AND payment
+  // is already recorded (or not applicable).
+  if (actions.length === 0 && !needsPayment && !showPayment) {
     return (
       <p className="text-sm text-muted-foreground text-center py-2">
         No further actions — order is {order.status.toLowerCase()}.
@@ -138,7 +146,7 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
     }
   };
 
-  if (showPayment) {
+  if (showPayment || needsPayment) {
     return (
       <div className="space-y-4">
         <p className="text-sm font-semibold text-foreground">How was payment made?</p>
