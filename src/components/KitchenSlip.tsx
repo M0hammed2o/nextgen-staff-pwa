@@ -85,14 +85,19 @@ export default function KitchenSlip({ order, businessName }: KitchenSlipProps) {
               <div style={{ fontWeight: "bold" }}>
                 {item.quantity}x {item.name_snapshot}
               </div>
+              {item.add_ons_snapshot?.map((ao) => (
+                <div key={ao.name} style={{ fontSize: "10px", paddingLeft: "8px" }}>
+                  + {ao.name}{(ao.quantity ?? 1) > 1 ? ` x${ao.quantity}` : ""}
+                </div>
+              ))}
+              {item.selected_options_snapshot?.map((o) => (
+                <div key={o.option} style={{ fontSize: "10px", paddingLeft: "8px" }}>
+                  + {o.option}
+                </div>
+              ))}
               {item.special_instructions && (
                 <div style={{ fontSize: "10px", fontStyle: "italic", paddingLeft: "8px" }}>
                   → {item.special_instructions}
-                </div>
-              )}
-              {item.options_snapshot && Object.keys(item.options_snapshot).length > 0 && (
-                <div style={{ fontSize: "10px", paddingLeft: "8px" }}>
-                  Options: {Object.entries(item.options_snapshot).map(([k, v]) => `${k}: ${v}`).join(", ")}
                 </div>
               )}
             </div>

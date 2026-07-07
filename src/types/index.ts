@@ -35,6 +35,12 @@ export interface LoginRequest {
 }
 
 // Backend OrderItemResponse
+export interface OrderItemAddOn {
+  name: string;
+  price_cents: number;
+  quantity: number;
+}
+
 export interface OrderItem {
   id: string;
   name_snapshot: string;
@@ -42,6 +48,8 @@ export interface OrderItem {
   quantity: number;
   line_total_cents: number;
   options_snapshot: Record<string, unknown> | null;
+  add_ons_snapshot: OrderItemAddOn[] | null;
+  selected_options_snapshot: Array<{ group: string; option: string; price_delta_cents: number }> | null;
   special_instructions: string | null;
 }
 

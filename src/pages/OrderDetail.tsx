@@ -135,6 +135,16 @@ export default function OrderDetail() {
                     <p className="text-sm font-medium text-foreground">
                       {item.quantity}x {item.name_snapshot}
                     </p>
+                    {item.add_ons_snapshot?.map((ao) => (
+                      <p key={ao.name} className="text-xs text-muted-foreground">
+                        ✦ {ao.name} +{formatCurrency(ao.price_cents * (ao.quantity ?? 1))}
+                      </p>
+                    ))}
+                    {item.selected_options_snapshot?.filter(o => o.price_delta_cents !== 0).map((o) => (
+                      <p key={o.option} className="text-xs text-muted-foreground">
+                        ✦ {o.option} {o.price_delta_cents > 0 ? "+" : ""}{formatCurrency(o.price_delta_cents)}
+                      </p>
+                    ))}
                     {item.special_instructions && (
                       <p className="text-xs italic text-muted-foreground">Note: {item.special_instructions}</p>
                     )}

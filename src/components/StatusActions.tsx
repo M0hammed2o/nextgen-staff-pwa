@@ -105,7 +105,6 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
 
   const handlePayment = async () => {
     if (!paymentMethod) return;
-    if (paymentMethod === "CARD" && !paymentReference.trim()) return;
     setLoading("payment");
     setError("");
     try {
@@ -171,7 +170,7 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
             type="text"
             value={paymentReference}
             onChange={(e) => setPaymentReference(e.target.value)}
-            placeholder="Card / payment reference"
+            placeholder="Card / payment reference (optional)"
             className="flex h-12 w-full rounded-lg border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           />
         )}
@@ -180,7 +179,6 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
           onClick={handlePayment}
           disabled={
             !paymentMethod ||
-            (paymentMethod === "CARD" && !paymentReference.trim()) ||
             loading === "payment"
           }
           className="flex h-14 w-full items-center justify-center rounded-lg bg-[hsl(var(--success))] text-sm font-semibold text-white disabled:opacity-50"
