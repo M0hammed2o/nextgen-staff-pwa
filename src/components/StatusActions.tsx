@@ -3,7 +3,7 @@ import type { Order, OrderStatus, StatusUpdateRequest } from "@/types";
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type PaymentMethod = "CASH" | "CARD";
+type CashPaymentMethod = "CASH" | "CARD";
 
 interface StatusActionsProps {
   order: Order;
@@ -49,22 +49,27 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
   const [estimatedMinutes, setEstimatedMinutes] = useState("");
   const [error, setError] = useState("");
 
-  // Payment prompt state — shown after COLLECTED or DELIVERED
+  // Payment prompt state — shown after COLLECTED or DELIVERED (cash/card)
   const [showPayment, setShowPayment] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<CashPaymentMethod | null>(null);
   const [paymentReference, setPaymentReference] = useState("");
 
   const actions = STATUS_FLOW[order.status] || [];
 
+  // For online-payment orders in ACCEPTED state: staff can manually mark paid.
+  const awaitingOnlinePayment =
+    order.payment_required &&
+    order.status === "ACCEPTED" &&
+    order.payment_status !== "PAID";
+
   // Payment is needed whenever the order is terminal (COLLECTED or DELIVERED)
-  // and has not been paid yet — regardless of how the component got here
-  // (newly clicked OR navigated back after a refresh).
+  // and has not been paid yet — regardless of how the component got here.
   const isTerminal = order.status === "COLLECTED" || order.status === "DELIVERED";
   const needsPayment = isTerminal && (order.payment_status ?? "PENDING") !== "PAID";
 
   // Only show "no further actions" when the status has no buttons AND payment
   // is already recorded (or not applicable).
-  if (actions.length === 0 && !needsPayment && !showPayment) {
+  if (actions.length === 0 && !needsPayment && !showPayment && !awaitingOnlinePayment) {
     return (
       <p className="text-sm text-muted-foreground text-center py-2">
         No further actions — order is {order.status.toLowerCase()}.
@@ -145,12 +150,79 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
     }
   };
 
+  // Online payment awaiting: show a lightweight notice + manual mark-paid button.
+  if (awaitingOnlinePayment && !showCancel) {
+    const payStatusLabel: Record<string, string> = {
+      UNPAID: "Payment Required",
+      PENDING: "Awaiting Payment",
+      FAILED: "Payment Failed",
+    };
+    const label = payStatusLabel[order.payment_status] ?? order.payment_status;
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+          <p className="font-medium text-foreground">💳 {label}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This order requires online payment before preparation can begin.
+            The customer has been sent payment instructions via WhatsApp.
+          </p>
+          {order.payment_link_url && (
+            <a
+              href={order.payment_link_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 block truncate text-xs text-primary underline"
+            >
+              {order.payment_link_url}
+            </a>
+          )}
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              setLoading("mark-paid");
+              setError("");
+              try {
+                await apiClient.patch(`/v1/business/orders/${order.id}/payment`, {
+                  payment_status: "PAID",
+                  payment_method: "MANUAL",
+                });
+                onUpdated();
+              } catch (err: unknown) {
+                const msg = err && typeof err === "object" && "message" in err
+                  ? (err as { message: string }).message : "Mark paid failed";
+                setError(msg);
+              } finally {
+                setLoading(null);
+              }
+            }}
+            disabled={loading !== null}
+            className="flex h-12 flex-1 items-center justify-center rounded-lg bg-[hsl(var(--success))] text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {loading === "mark-paid" ? (
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              "Mark as Paid ✓"
+            )}
+          </button>
+          <button
+            onClick={() => setShowCancel(true)}
+            className="flex h-12 flex-1 items-center justify-center rounded-lg bg-destructive text-sm font-semibold text-destructive-foreground"
+          >
+            Cancel Order
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (showPayment || needsPayment) {
     return (
       <div className="space-y-4">
         <p className="text-sm font-semibold text-foreground">How was payment made?</p>
         <div className="flex gap-3">
-          {(["CASH", "CARD"] as PaymentMethod[]).map((m) => (
+          {(["CASH", "CARD"] as CashPaymentMethod[]).map((m) => (
             <button
               key={m}
               onClick={() => setPaymentMethod(m)}

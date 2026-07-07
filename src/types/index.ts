@@ -53,14 +53,18 @@ export interface OrderItem {
   special_instructions: string | null;
 }
 
+export type PaymentStatus = 'UNPAID' | 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'CASH_ON_COLLECTION';
+
 // Backend OrderResponse
 export interface Order {
   id: string;
   order_number: string;
   status: OrderStatus;
-  payment_status: string;
+  payment_status: PaymentStatus;
+  payment_required: boolean;
   payment_method: string | null;
   payment_reference: string | null;
+  payment_link_url: string | null;
   paid_at: string | null;
   order_mode: string;
   source: string;
