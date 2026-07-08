@@ -2,10 +2,10 @@
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 
 declare const self: ServiceWorkerGlobalScope;
-declare const __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
 
 cleanupOutdatedCaches();
-precacheAndRoute(__WB_MANIFEST);
+// self.__WB_MANIFEST is replaced by the actual precache list at build time
+precacheAndRoute(self.__WB_MANIFEST);
 
 self.addEventListener('push', (event: PushEvent) => {
   if (!event.data) return;
