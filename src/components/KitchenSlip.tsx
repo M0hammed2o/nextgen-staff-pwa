@@ -74,6 +74,11 @@ export default function KitchenSlip({ order, businessName }: KitchenSlipProps) {
         {order.delivery_address && (
           <div><strong>Address:</strong> {order.delivery_address}</div>
         )}
+        {order.special_instructions && (
+          <div style={{ marginTop: "4px", fontStyle: "italic" }}>
+            <strong>Note:</strong> {order.special_instructions}
+          </div>
+        )}
       </div>
 
       {/* Items */}

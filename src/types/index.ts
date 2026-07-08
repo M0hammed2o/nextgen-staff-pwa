@@ -81,6 +81,7 @@ export interface Order {
   accepted_at: string | null;
   ready_at: string | null;
   completed_at: string | null;
+  special_instructions: string | null;
   cancelled_reason: string | null;
   created_at: string;
   updated_at: string;
