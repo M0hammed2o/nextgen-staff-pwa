@@ -91,11 +91,16 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
         body.estimated_ready_minutes = parseInt(estimatedMinutes, 10);
       }
       await apiClient.post(`/v1/business/orders/${order.id}/status`, body);
-      // After collection or delivery, ask for payment method
+      // After collection or delivery, ask how payment was made —
+      // but skip the prompt if the order was already paid online.
       if (nextStatus === "COLLECTED" || nextStatus === "DELIVERED") {
-        setShowPayment(true);
-        setPaymentMethod(null);
-        setPaymentReference("");
+        if (order.payment_status === "PAID") {
+          onUpdated();
+        } else {
+          setShowPayment(true);
+          setPaymentMethod(null);
+          setPaymentReference("");
+        }
       } else {
         onUpdated();
       }
