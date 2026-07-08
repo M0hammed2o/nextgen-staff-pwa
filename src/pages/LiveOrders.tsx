@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient, createSSEConnection } from "@/lib/api";
 import type { Order, PaginatedResponse } from "@/types";
@@ -50,7 +50,7 @@ function playNewOrderAlert(): void {
 
 export default function LiveOrders() {
   const queryClient = useQueryClient();
-  const [lastCount, setLastCount] = useState(0);
+  const prevCountRef = useRef<number | null>(null);
 
   const { data: ordersRes, isLoading, error, refetch } = useQuery<PaginatedResponse<Order>>({
     queryKey: ["live-orders"],
@@ -80,12 +80,14 @@ export default function LiveOrders() {
   }, [queryClient]);
 
   // Loud 3-beep alert when active order count increases.
+  // prevCountRef starts as null so the very first data-load never triggers a
+  // sound, but going from 0 → 1 (empty board → first order) does.
   useEffect(() => {
-    if (orders.length > lastCount && lastCount > 0) {
+    if (prevCountRef.current !== null && orders.length > prevCountRef.current) {
       playNewOrderAlert();
     }
-    setLastCount(orders.length);
-  }, [orders.length, lastCount]);
+    prevCountRef.current = orders.length;
+  }, [orders.length]);
 
   const handleRefresh = useCallback(() => {
     refetch();

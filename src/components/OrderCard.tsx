@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import type { Order } from "@/types";
-import { cn, formatCurrency, timeAgo, getStatusColor } from "@/lib/utils";
+import { cn, formatCurrency, formatTime, timeAgo, getStatusColor } from "@/lib/utils";
 
 interface OrderCardProps {
   order: Order;
@@ -46,7 +46,8 @@ export default function OrderCard({ order }: OrderCardProps) {
             {formatCurrency(order.total_cents)}
           </p>
           <p className="text-xs text-muted-foreground">
-            {timeAgo(order.created_at)}
+            {formatTime(order.created_at)}
+            {timeAgo(order.created_at) ? ` · ${timeAgo(order.created_at)}` : ""}
           </p>
         </div>
       </div>
