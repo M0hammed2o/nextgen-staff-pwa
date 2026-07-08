@@ -1,15 +1,44 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient, createSSEConnection } from "@/lib/api";
 import type { Order, PaginatedResponse } from "@/types";
 import OrderCard from "@/components/OrderCard";
+import { subscribeToPush } from "@/lib/push-notifications";
 
-const NEW_ORDER_SOUND_URL = "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgipGLfWxka3aBg3lsdH6Nmpyrqqednpydo6urpKCdn6SnqKiloqGho6WnpqalpKOlpqempqWkpaalpaSkpKWlpaWkpKSlpaWlpKSlpQ==";
+function playNewOrderAlert(): void {
+  try {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    const beeps = [0, 0.22, 0.44];
+    for (const startOffset of beeps) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = "square";
+      osc.frequency.setValueAtTime(1050, ctx.currentTime + startOffset);
+
+      gain.gain.setValueAtTime(0, ctx.currentTime + startOffset);
+      gain.gain.linearRampToValueAtTime(0.9, ctx.currentTime + startOffset + 0.01);
+      gain.gain.setValueAtTime(0.9, ctx.currentTime + startOffset + 0.16);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + startOffset + 0.18);
+
+      osc.start(ctx.currentTime + startOffset);
+      osc.stop(ctx.currentTime + startOffset + 0.2);
+    }
+
+    setTimeout(() => ctx.close(), 1500);
+  } catch {
+    // Audio blocked by browser policy — push notification is the fallback.
+  }
+}
 
 export default function LiveOrders() {
   const queryClient = useQueryClient();
   const [lastCount, setLastCount] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const { data: ordersRes, isLoading, error, refetch } = useQuery<PaginatedResponse<Order>>({
     queryKey: ["live-orders"],
@@ -18,6 +47,11 @@ export default function LiveOrders() {
   });
 
   const orders = ordersRes?.data ?? [];
+
+  // Request push notification permission and register subscription on first load.
+  useEffect(() => {
+    subscribeToPush();
+  }, []);
 
   // SSE with automatic token-refresh reconnect; polling fallback on exhausted retries.
   useEffect(() => {
@@ -33,18 +67,10 @@ export default function LiveOrders() {
     return () => conn.close();
   }, [queryClient]);
 
-  // Sound alert for new orders
+  // Loud 3-beep alert when active order count increases.
   useEffect(() => {
     if (orders.length > lastCount && lastCount > 0) {
-      try {
-        if (!audioRef.current) {
-          audioRef.current = new Audio(NEW_ORDER_SOUND_URL);
-        }
-        audioRef.current.play().catch(() => {});
-      } catch (e) {
-        // Audio may fail due to browser autoplay policy — non-fatal, warn only.
-        console.warn("New order audio alert failed:", e);
-      }
+      playNewOrderAlert();
     }
     setLastCount(orders.length);
   }, [orders.length, lastCount]);
