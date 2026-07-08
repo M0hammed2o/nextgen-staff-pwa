@@ -7,30 +7,42 @@ import { subscribeToPush } from "@/lib/push-notifications";
 
 function playNewOrderAlert(): void {
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    const AudioCtxClass = (
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    );
+    if (!AudioCtxClass) return;
+    const ctx = new AudioCtxClass();
 
-    const beeps = [0, 0.22, 0.44];
-    for (const startOffset of beeps) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
+    const playBeeps = () => {
+      const beeps = [0, 0.22, 0.44];
+      for (const startOffset of beeps) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
 
-      osc.type = "square";
-      osc.frequency.setValueAtTime(1050, ctx.currentTime + startOffset);
+        osc.type = "square";
+        osc.frequency.setValueAtTime(1050, ctx.currentTime + startOffset);
 
-      gain.gain.setValueAtTime(0, ctx.currentTime + startOffset);
-      gain.gain.linearRampToValueAtTime(0.9, ctx.currentTime + startOffset + 0.01);
-      gain.gain.setValueAtTime(0.9, ctx.currentTime + startOffset + 0.16);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + startOffset + 0.18);
+        gain.gain.setValueAtTime(0, ctx.currentTime + startOffset);
+        gain.gain.linearRampToValueAtTime(0.9, ctx.currentTime + startOffset + 0.01);
+        gain.gain.setValueAtTime(0.9, ctx.currentTime + startOffset + 0.16);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + startOffset + 0.18);
 
-      osc.start(ctx.currentTime + startOffset);
-      osc.stop(ctx.currentTime + startOffset + 0.2);
+        osc.start(ctx.currentTime + startOffset);
+        osc.stop(ctx.currentTime + startOffset + 0.2);
+      }
+      setTimeout(() => ctx.close(), 1500);
+    };
+
+    // Browsers suspend AudioContext until a user gesture has occurred.
+    // Resume it first, then play — this is a no-op if already running.
+    if (ctx.state === "suspended") {
+      ctx.resume().then(playBeeps).catch(() => {});
+    } else {
+      playBeeps();
     }
-
-    setTimeout(() => ctx.close(), 1500);
   } catch {
     // Audio blocked by browser policy — push notification is the fallback.
   }
