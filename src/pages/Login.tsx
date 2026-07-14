@@ -252,7 +252,7 @@ export default function Login() {
             <h1 className="text-xl font-bold text-foreground">
               Hi, {selectedStaff?.staff_name}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">Enter your PIN to continue</p>
+            <p className="mt-1 text-sm text-muted-foreground">Enter your {PIN_LENGTH}-digit PIN to continue</p>
           </div>
         </div>
 
