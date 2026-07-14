@@ -31,7 +31,26 @@ export interface LoginResponse {
 
 export interface LoginRequest {
   business_code: string;
+  staff_id: string;
   pin: string;
+}
+
+// One selectable staff member on the pick-your-name login step
+export interface StaffDirectoryEntry {
+  id: string;
+  staff_name: string;
+}
+
+export interface StaffDirectoryResponse {
+  business_name: string;
+  staff: StaffDirectoryEntry[];
+}
+
+export interface WhatsAppStatus {
+  paused: boolean;
+  paused_at: string | null;
+  paused_by_name: string | null;
+  busy_text: string | null;
 }
 
 // Backend OrderItemResponse

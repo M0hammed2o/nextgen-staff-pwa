@@ -1,10 +1,52 @@
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { apiClient } from "@/lib/api";
+import type { WhatsAppStatus } from "@/types";
 import logo from "@/assets/logo.jpeg";
 
 export default function Profile() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const [status, setStatus] = useState<WhatsAppStatus | null>(null);
+  const [toggling, setToggling] = useState(false);
+
+  const loadStatus = async () => {
+    try {
+      const res = await apiClient.get<WhatsAppStatus>("/v1/business/whatsapp/status");
+      setStatus(res);
+    } catch {
+      // Non-fatal — the toggle just won't render until this succeeds.
+    }
+  };
+
+  useEffect(() => {
+    void loadStatus();
+  }, []);
+
+  const handlePause = async () => {
+    if (!window.confirm("Pause WhatsApp orders? Customers won't be able to order until you resume.")) {
+      return;
+    }
+    setToggling(true);
+    try {
+      const res = await apiClient.post<WhatsAppStatus>("/v1/business/whatsapp/pause");
+      setStatus(res);
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setToggling(true);
+    try {
+      const res = await apiClient.post<WhatsAppStatus>("/v1/business/whatsapp/resume");
+      setStatus(res);
+    } finally {
+      setToggling(false);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -38,6 +80,37 @@ export default function Profile() {
             <span className="font-medium text-foreground">{user?.business_name || "—"}</span>
           </div>
         </div>
+
+        {status && (
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">WhatsApp Orders</p>
+                <p className="text-xs text-muted-foreground">
+                  {status.paused
+                    ? `Paused${status.paused_by_name ? ` by ${status.paused_by_name}` : ""} — customers see your busy message`
+                    : "Accepting orders normally"}
+                </p>
+              </div>
+              <span
+                className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                  status.paused ? "bg-destructive" : "bg-green-500"
+                }`}
+              />
+            </div>
+            <button
+              onClick={status.paused ? handleResume : handlePause}
+              disabled={toggling}
+              className={`flex h-12 w-full items-center justify-center rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 ${
+                status.paused
+                  ? "bg-green-600 text-white"
+                  : "bg-secondary text-foreground border border-border"
+              }`}
+            >
+              {toggling ? "…" : status.paused ? "Resume WhatsApp Orders" : "Pause — Too Busy"}
+            </button>
+          </div>
+        )}
 
         <button
           onClick={handleLogout}

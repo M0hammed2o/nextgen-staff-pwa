@@ -133,15 +133,28 @@ export function createSSEConnection(
       return;
     }
 
-    es.onmessage = (event) => {
-      retries = 0; // reset back-off on successful message
+    // The backend sends NAMED SSE events ("connected", "order_update",
+    // "keepalive" — see backend/app/realtime/sse.py), never the unnamed
+    // default "message" event. EventSource's onmessage only fires for the
+    // unnamed type, so it silently never fires here — this connection must
+    // use addEventListener for each named event instead.
+    es.addEventListener("connected", () => {
+      retries = 0; // reset back-off — proof the connection is alive
+    });
+
+    es.addEventListener("keepalive", () => {
+      retries = 0; // periodic proof of life — keep the back-off reset
+    });
+
+    es.addEventListener("order_update", (event) => {
+      retries = 0;
       try {
         const data = JSON.parse(event.data);
         onMessage(data);
       } catch (parseError) {
         if (event.data) console.warn("SSE: failed to parse message", parseError);
       }
-    };
+    });
 
     es.onerror = () => {
       es?.close();
@@ -186,6 +199,31 @@ export function createSSEConnection(
       es = null;
     },
   };
+}
+
+/**
+ * Fetch the pick-your-name staff list for the PIN login screen.
+ * Unauthenticated (pre-login) — fetched fresh every time, never cached.
+ */
+export async function fetchStaffDirectory(
+  businessCode: string
+): Promise<import("@/types").StaffDirectoryResponse> {
+  const res = await fetch(`${BASE_URL}/v1/auth/pin/staff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ business_code: businessCode }),
+  });
+  if (!res.ok) {
+    let message = "Store not found. Check the code and try again.";
+    try {
+      const body = await res.json();
+      message = body?.error?.message || body?.detail || message;
+    } catch {
+      // non-JSON error body — keep the default message
+    }
+    throw { message, status: res.status };
+  }
+  return res.json();
 }
 
 export const apiClient = {
