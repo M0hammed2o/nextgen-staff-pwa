@@ -3,6 +3,17 @@ import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 
 declare const self: ServiceWorkerGlobalScope;
 
+// Without these, registerType: "autoUpdate" doesn't actually auto-update —
+// a newly deployed service worker installs but sits "waiting" until every
+// open tab of the OLD worker is closed, which never happens for a
+// bookmarked/pinned till that's rarely fully closed. skipWaiting() +
+// clients.claim() make every new deploy take over immediately for tabs
+// already open, instead of silently getting stuck behind a stale worker.
+self.skipWaiting();
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 cleanupOutdatedCaches();
 // self.__WB_MANIFEST is replaced by the actual precache list at build time
 precacheAndRoute(self.__WB_MANIFEST);
