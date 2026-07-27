@@ -7,6 +7,7 @@ import BottomNav from "@/components/BottomNav";
 import Login from "@/pages/Login";
 import Welcome from "@/pages/Welcome";
 import LiveOrders from "@/pages/LiveOrders";
+import Pos from "@/pages/Pos";
 import OrderDetail from "@/pages/OrderDetail";
 import CompletedOrders from "@/pages/CompletedOrders";
 import Profile from "@/pages/Profile";
@@ -41,6 +42,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <LiveOrders />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pos"
+            element={
+              <ProtectedRoute>
+                <Pos />
               </ProtectedRoute>
             }
           />

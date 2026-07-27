@@ -66,17 +66,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      const tokens = getStoredTokens();
-      if (tokens?.refresh_token) {
-        await apiClient.post("/v1/auth/logout", { refresh_token: tokens.refresh_token });
-      }
-    } catch (e) {
-      // Logout API failure is non-fatal — user is cleared locally regardless.
-      console.error("Logout API call failed:", e);
-    }
+    // Clear client-side session state first, then best-effort notify the
+    // server -- apiClient has no request timeout anywhere, so awaiting the
+    // revocation call before clearing local state risked a slow/hanging
+    // request blocking logout entirely (found via a real, if rare, browser
+    // test flake in the sibling Manager Dashboard app's identical pattern;
+    // fixed there and here together).
+    const tokens = getStoredTokens();
     clearTokens(); // clears tokens + cached user; business context is preserved
     setUser(null);
+    if (tokens?.refresh_token) {
+      apiClient.post("/v1/auth/logout", { refresh_token: tokens.refresh_token }).catch((e) => {
+        console.error("Logout API call failed (non-fatal, already logged out locally):", e);
+      });
+    }
   }, []);
 
   const changeStore = useCallback(() => {

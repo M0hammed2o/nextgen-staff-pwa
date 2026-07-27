@@ -7,6 +7,7 @@ import { formatCurrency, formatDateTime, getStatusColor, cn } from "@/lib/utils"
 import StatusActions from "@/components/StatusActions";
 import DeliveryFeePanel from "@/components/DeliveryFeePanel";
 import KitchenSlip, { printKitchenSlip } from "@/components/KitchenSlip";
+import CustomerReceipt, { printCustomerReceipt } from "@/components/CustomerReceipt";
 import { useAuth } from "@/lib/auth";
 
 export default function OrderDetail() {
@@ -15,6 +16,7 @@ export default function OrderDetail() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [showSlip, setShowSlip] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(false);
 
   const { data: order, isLoading, error } = useQuery<Order>({
     queryKey: ["order", orderId],
@@ -33,6 +35,14 @@ export default function OrderDetail() {
     setTimeout(() => {
       printKitchenSlip();
       setShowSlip(false);
+    }, 100);
+  };
+
+  const handlePrintReceipt = () => {
+    setShowReceipt(true);
+    setTimeout(() => {
+      printCustomerReceipt();
+      setShowReceipt(false);
     }, 100);
   };
 
@@ -64,6 +74,13 @@ export default function OrderDetail() {
         </div>
       )}
 
+      {/* Customer Receipt (hidden, only rendered for printing) */}
+      {showReceipt && (
+        <div className="fixed top-0 left-0 z-[9999]">
+          <CustomerReceipt order={order} businessName={user?.business_name ?? undefined} />
+        </div>
+      )}
+
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top no-print">
         <div className="mx-auto flex max-w-lg items-center gap-3 px-4 py-4">
           <button onClick={() => navigate(-1)} className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-foreground">
@@ -90,6 +107,18 @@ export default function OrderDetail() {
             <rect x="6" y="14" width="12" height="8" />
           </svg>
           Print Kitchen Slip
+        </button>
+
+        <button
+          onClick={handlePrintReceipt}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card p-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+            <path d="M3 6h18" />
+            <path d="M16 10a4 4 0 0 1-8 0" />
+          </svg>
+          Print Customer Receipt
         </button>
 
         {/* Customer & Order Info */}
@@ -147,8 +176,8 @@ export default function OrderDetail() {
                       </p>
                     ))}
                     {item.selected_options_snapshot?.filter(o => o.price_delta_cents !== 0).map((o) => (
-                      <p key={o.option} className="text-xs text-muted-foreground">
-                        ✦ {o.option} {o.price_delta_cents > 0 ? "+" : ""}{formatCurrency(o.price_delta_cents)}
+                      <p key={o.option_name} className="text-xs text-muted-foreground">
+                        ✦ {o.option_name} {o.price_delta_cents > 0 ? "+" : ""}{formatCurrency(o.price_delta_cents)}
                       </p>
                     ))}
                     {item.special_instructions && (

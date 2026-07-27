@@ -96,8 +96,8 @@ export default function KitchenSlip({ order, businessName }: KitchenSlipProps) {
                 </div>
               ))}
               {item.selected_options_snapshot?.map((o) => (
-                <div key={o.option} style={{ fontSize: "10px", paddingLeft: "8px" }}>
-                  + {o.option}
+                <div key={o.option_name} style={{ fontSize: "10px", paddingLeft: "8px" }}>
+                  + {o.option_name}
                 </div>
               ))}
               {item.special_instructions && (
