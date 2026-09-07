@@ -9,6 +9,8 @@ import DeliveryFeePanel from "@/components/DeliveryFeePanel";
 import KitchenSlip, { printKitchenSlip } from "@/components/KitchenSlip";
 import CustomerReceipt, { printCustomerReceipt } from "@/components/CustomerReceipt";
 import { useAuth } from "@/lib/auth";
+import ReversalPanel from "@/components/ReversalPanel";
+import type { POSSettings } from "@/types";
 
 export default function OrderDetail() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -17,6 +19,13 @@ export default function OrderDetail() {
   const { user } = useAuth();
   const [showSlip, setShowSlip] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [isReprint, setIsReprint] = useState(false);
+
+  const { data: posSettings } = useQuery<POSSettings>({
+    queryKey: ["pos-settings"],
+    queryFn: () => apiClient.get<POSSettings>("/v1/business/pos/settings"),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const { data: order, isLoading, error } = useQuery<Order>({
     queryKey: ["order", orderId],
@@ -43,6 +52,25 @@ export default function OrderDetail() {
     setTimeout(() => {
       printCustomerReceipt();
       setShowReceipt(false);
+    }, 100);
+  };
+
+  // A reprint is recorded server-side before it is printed, so a re-issued
+  // slip can never be passed off as evidence of a second sale. Printing goes
+  // ahead even if that call fails — refusing to reprint because an audit
+  // write failed would be the wrong trade at a till.
+  const handleReprint = async () => {
+    try {
+      await apiClient.post(`/v1/business/receipts/orders/${orderId}/reprint`, {});
+    } catch {
+      /* still print — see above */
+    }
+    setIsReprint(true);
+    setShowReceipt(true);
+    setTimeout(() => {
+      printCustomerReceipt();
+      setShowReceipt(false);
+      setIsReprint(false);
     }, 100);
   };
 
@@ -77,7 +105,12 @@ export default function OrderDetail() {
       {/* Customer Receipt (hidden, only rendered for printing) */}
       {showReceipt && (
         <div className="fixed top-0 left-0 z-[9999]">
-          <CustomerReceipt order={order} businessName={user?.business_name ?? undefined} />
+          <CustomerReceipt
+            order={order}
+            businessName={user?.business_name ?? undefined}
+            paperWidthMm={posSettings?.receipt_paper_width_mm ?? 80}
+            isReprint={isReprint}
+          />
         </div>
       )}
 
@@ -121,6 +154,24 @@ export default function OrderDetail() {
           Print Customer Receipt
         </button>
 
+        <button
+          onClick={handleReprint}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card p-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          Reprint Receipt
+        </button>
+
+        <ReversalPanel
+          order={order}
+          role={user?.role ?? "STAFF"}
+          inventoryEnabled={posSettings?.inventory_enabled ?? false}
+          onDone={handleUpdated}
+        />
+
         {/* Customer & Order Info */}
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -141,12 +192,31 @@ export default function OrderDetail() {
           )}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Mode</span>
-            <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">{order.order_mode || "—"}</span>
+            <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+              {order.order_mode || "—"}{order.table_number ? ` · Table ${order.table_number}` : ""}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Source</span>
             <span className="text-sm text-foreground">{order.source || "—"}</span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Payment</span>
+            <span className={cn(
+              "rounded-md px-2 py-0.5 text-xs font-medium",
+              order.payment_status === "PAID" ? "bg-[hsl(var(--success))]/15 text-[hsl(var(--success))]" : "bg-secondary text-secondary-foreground"
+            )}>
+              {order.payment_method ? `${order.payment_method} · ` : ""}{order.payment_status}
+            </span>
+          </div>
+          {order.payment_method === "CASH" && order.cash_tendered_cents != null && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Cash received / change</span>
+              <span className="text-sm text-foreground">
+                {formatCurrency(order.cash_tendered_cents)} / {formatCurrency(order.change_due_cents)}
+              </span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Ordered</span>
             <span className="text-sm text-foreground">{formatDateTime(order.created_at)}</span>
@@ -179,6 +249,9 @@ export default function OrderDetail() {
                       <p key={o.option_name} className="text-xs text-muted-foreground">
                         ✦ {o.option_name} {o.price_delta_cents > 0 ? "+" : ""}{formatCurrency(o.price_delta_cents)}
                       </p>
+                    ))}
+                    {item.removed_ingredients_snapshot?.map((ing) => (
+                      <p key={ing.id} className="text-xs font-medium text-destructive">No {ing.name}</p>
                     ))}
                     {item.special_instructions && (
                       <p className="text-xs italic text-muted-foreground">Note: {item.special_instructions}</p>

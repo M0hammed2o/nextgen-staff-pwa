@@ -99,6 +99,22 @@ export default function CashupDialog({ open, onClose }: Props) {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">Till closed.</p>
             <div className="flex justify-between text-sm">
+              <span>Opening float</span>
+              <span className="font-medium">{formatCurrency(result.opening_float_cents)}</span>
+            </div>
+            {result.cash_sales_cents != null && (
+              <div className="flex justify-between text-sm">
+                <span>Cash sales</span>
+                <span className="font-medium">+{formatCurrency(result.cash_sales_cents)}</span>
+              </div>
+            )}
+            {!!result.cash_refunds_cents && (
+              <div className="flex justify-between text-sm">
+                <span>Cash refunds</span>
+                <span className="font-medium">-{formatCurrency(result.cash_refunds_cents)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm">
               <span>Expected cash</span>
               <span className="font-medium">{formatCurrency(result.expected_cash_cents)}</span>
             </div>

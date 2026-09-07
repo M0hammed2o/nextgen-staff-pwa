@@ -19,6 +19,8 @@ interface Props {
     selectedOptionIds: Record<string, string>;
     selectedOptionsDisplay: { groupName: string; optionName: string; priceDeltaCents: number }[];
     addOnSelections: { addOnId: string; name: string; priceCents: number; quantity: number }[];
+    removedIngredientIds: string[];
+    removedIngredientsDisplay: { id: string; name: string }[];
     specialInstructions: string | null;
   }) => void;
 }
@@ -36,9 +38,12 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
     .filter((g) => g.is_enabled !== false)
     .sort((a, b) => a.sort_order - b.sort_order);
   const addOns = (item?.add_ons ?? []).filter((a) => a.is_active);
+  const removableIngredients = item?.options_json?.removable_ingredients ?? [];
 
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [addOnQty, setAddOnQty] = useState<Record<string, number>>({});
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
+  const [specialInstructions, setSpecialInstructions] = useState("");
 
   // Reset local selection state every time a different item is opened.
   useEffect(() => {
@@ -49,8 +54,14 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
     }
     setSelected(defaults);
     setAddOnQty({});
+    setRemovedIds([]);
+    setSpecialInstructions("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
+
+  function toggleRemoved(id: string) {
+    setRemovedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+  }
 
   if (!item) return null;
 
@@ -72,11 +83,15 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
         return { addOnId, name: addOn?.name ?? "", priceCents: addOn?.price_cents ?? 0, quantity: qty };
       });
 
+    const removedIngredientsDisplay = removableIngredients.filter((ing) => removedIds.includes(ing.id));
+
     onAdd({
       selectedOptionIds: selected,
       selectedOptionsDisplay,
       addOnSelections,
-      specialInstructions: null,
+      removedIngredientIds: removedIds,
+      removedIngredientsDisplay,
+      specialInstructions: specialInstructions.trim() || null,
     });
   }
 
@@ -166,6 +181,50 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
               </div>
             </div>
           )}
+
+          {removableIngredients.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-sm font-semibold text-foreground">Remove ingredients</span>
+              <div className="grid grid-cols-2 gap-2">
+                {removableIngredients.map((ing) => {
+                  const isRemoved = removedIds.includes(ing.id);
+                  return (
+                    <button
+                      key={ing.id}
+                      type="button"
+                      onClick={() => toggleRemoved(ing.id)}
+                      className={cn(
+                        "flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                        isRemoved
+                          ? "border-primary bg-primary/10 text-primary font-semibold"
+                          : "border-border bg-card text-foreground active:bg-muted"
+                      )}
+                    >
+                      <span className={cn(
+                        "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[10px]",
+                        isRemoved ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                      )}>
+                        {isRemoved ? "✓" : ""}
+                      </span>
+                      No {ing.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <span className="text-sm font-semibold text-foreground">Special instructions</span>
+            <textarea
+              value={specialInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
+              placeholder="e.g. Sauce separately"
+              rows={2}
+              maxLength={500}
+              className="w-full rounded-lg border border-border bg-secondary p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
         </div>
 
         <DialogFooter className="flex-row gap-2">

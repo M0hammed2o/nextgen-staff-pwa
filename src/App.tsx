@@ -10,6 +10,7 @@ import LiveOrders from "@/pages/LiveOrders";
 import Pos from "@/pages/Pos";
 import OrderDetail from "@/pages/OrderDetail";
 import CompletedOrders from "@/pages/CompletedOrders";
+import Wastage from "@/pages/Wastage";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/NotFound";
 
@@ -58,6 +59,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <OrderDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/wastage"
+            element={
+              <ProtectedRoute>
+                <Wastage />
               </ProtectedRoute>
             }
           />

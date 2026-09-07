@@ -12,8 +12,14 @@ interface StatusActionsProps {
 
 /**
  * Backend order flow (from shared/enums.py ORDER_STATUS_TRANSITIONS):
- *   NEW → ACCEPTED → IN_PROGRESS → READY → COLLECTED/DELIVERED
+ *   NEW → ACCEPTED → IN_PROGRESS → READY → COLLECTED/DELIVERED/COMPLETED
  * Each status can also → CANCELLED
+ *
+ * The READY → terminal step depends on order_mode (BUG-0035 fix): a pickup
+ * order should only ever offer "Collected", a delivery order only
+ * "Delivered", and a dine-in order "Complete" — never more than one, and
+ * never the wrong one. getReadyAction() below picks the single correct
+ * terminal action instead of STATUS_FLOW listing all three unconditionally.
  */
 const STATUS_FLOW: Record<string, { label: string; next: OrderStatus; variant: string }[]> = {
   // Delivery fee states — no standard status buttons; DeliveryFeePanel handles the action
@@ -36,11 +42,20 @@ const STATUS_FLOW: Record<string, { label: string; next: OrderStatus; variant: s
     { label: "Mark Ready", next: "READY", variant: "bg-[hsl(var(--success))] text-white" },
     { label: "Cancel", next: "CANCELLED", variant: "bg-destructive text-destructive-foreground" },
   ],
-  READY: [
-    { label: "Collected", next: "COLLECTED", variant: "bg-[hsl(var(--success))] text-white" },
-    { label: "Delivered", next: "DELIVERED", variant: "bg-primary text-primary-foreground" },
-  ],
 };
+
+function getReadyAction(orderMode: string): { label: string; next: OrderStatus; variant: string } {
+  if (orderMode === "DELIVERY") {
+    return { label: "Delivered", next: "DELIVERED", variant: "bg-primary text-primary-foreground" };
+  }
+  if (orderMode === "DINE_IN") {
+    return { label: "Complete", next: "COMPLETED", variant: "bg-[hsl(var(--success))] text-white" };
+  }
+  // PICKUP / TAKEAWAY (default)
+  return { label: "Collected", next: "COLLECTED", variant: "bg-[hsl(var(--success))] text-white" };
+}
+
+const TERMINAL_STATUSES = new Set(["COLLECTED", "DELIVERED", "COMPLETED"]);
 
 export default function StatusActions({ order, onUpdated }: StatusActionsProps) {
   const [loading, setLoading] = useState<OrderStatus | string | null>(null);
@@ -54,7 +69,9 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
   const [paymentMethod, setPaymentMethod] = useState<CashPaymentMethod | null>(null);
   const [paymentReference, setPaymentReference] = useState("");
 
-  const actions = STATUS_FLOW[order.status] || [];
+  const actions = order.status === "READY"
+    ? [getReadyAction(order.order_mode), { label: "Cancel", next: "CANCELLED" as OrderStatus, variant: "bg-destructive text-destructive-foreground" }]
+    : STATUS_FLOW[order.status] || [];
 
   // For online-payment orders in ACCEPTED state: staff can manually mark paid.
   const awaitingOnlinePayment =
@@ -62,9 +79,12 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
     order.status === "ACCEPTED" &&
     order.payment_status !== "PAID";
 
-  // Payment is needed whenever the order is terminal (COLLECTED or DELIVERED)
-  // and has not been paid yet — regardless of how the component got here.
-  const isTerminal = order.status === "COLLECTED" || order.status === "DELIVERED";
+  // Payment is needed whenever the order is terminal (COLLECTED/DELIVERED/
+  // COMPLETED) and has not been paid yet — regardless of how the component
+  // got here. A POS order is already PAID by the time it reaches any of
+  // these statuses (paid at checkout), so this never fires for POS sales —
+  // it only ever fires for a WhatsApp cash-on-collection order.
+  const isTerminal = TERMINAL_STATUSES.has(order.status);
   const needsPayment = isTerminal && (order.payment_status ?? "PENDING") !== "PAID";
 
   // Only show "no further actions" when the status has no buttons AND payment
@@ -91,9 +111,10 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
         body.estimated_ready_minutes = parseInt(estimatedMinutes, 10);
       }
       await apiClient.post(`/v1/business/orders/${order.id}/status`, body);
-      // After collection or delivery, ask how payment was made —
-      // but skip the prompt if the order was already paid online.
-      if (nextStatus === "COLLECTED" || nextStatus === "DELIVERED") {
+      // After collection, delivery, or dine-in completion, ask how payment
+      // was made — but skip the prompt if the order was already paid (a POS
+      // order always is, since it was paid at checkout, not here).
+      if (TERMINAL_STATUSES.has(nextStatus)) {
         if (order.payment_status === "PAID") {
           onUpdated();
         } else {

@@ -72,6 +72,7 @@ export function getStatusColor(status: string): string {
       return "bg-success/20 text-success";
     case "COLLECTED":
     case "DELIVERED":
+    case "COMPLETED":
       return "bg-success/10 text-success";
     case "CANCELLED":
       return "bg-destructive/20 text-destructive";

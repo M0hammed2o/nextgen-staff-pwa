@@ -4,6 +4,10 @@ import { formatCurrency, formatDateTime } from "@/lib/utils";
 interface CustomerReceiptProps {
   order: Order;
   businessName?: string;
+  /** 58 or 80. Comes from POS settings; the tenant configures it. */
+  paperWidthMm?: number;
+  /** Marks a re-issued slip so it can't be mistaken for a second sale. */
+  isReprint?: boolean;
 }
 
 /**
@@ -12,17 +16,32 @@ interface CustomerReceiptProps {
  * delivery fee, tax, and total, plus payment method/status. Same
  * hidden-div + window.print() pattern as KitchenSlip.tsx.
  */
-export default function CustomerReceipt({ order, businessName }: CustomerReceiptProps) {
+export default function CustomerReceipt({
+  order,
+  businessName,
+  paperWidthMm = 80,
+  isReprint = false,
+}: CustomerReceiptProps) {
+  // Thermal rolls are 58 mm or 80 mm. Anything else is a misconfiguration,
+  // so fall back to the more common 80 rather than printing at a width the
+  // paper cannot physically hold.
+  const widthMm = paperWidthMm === 58 ? 58 : 80;
+  const isVoided = order.payment_status === "VOIDED";
+  const isRefunded =
+    order.payment_status === "REFUNDED" || order.payment_status === "PARTIALLY_REFUNDED";
+  const banner = isVoided ? "SALE VOIDED" : isRefunded ? "REFUNDED" : isReprint ? "REPRINT" : null;
+
   return (
     <div className="customer-receipt">
       <style>{`
         @media print {
+          @page { size: ${widthMm}mm auto; margin: 0; }
           body * { visibility: hidden !important; }
           .customer-receipt, .customer-receipt * { visibility: visible !important; }
           .customer-receipt {
             position: fixed !important;
             top: 0; left: 0;
-            width: 80mm;
+            width: ${widthMm}mm;
             padding: 4mm;
             font-family: 'Courier New', monospace;
             font-size: 12px;
@@ -33,7 +52,7 @@ export default function CustomerReceipt({ order, businessName }: CustomerReceipt
         }
         @media screen {
           .customer-receipt {
-            width: 80mm;
+            width: ${widthMm}mm;
             padding: 4mm;
             font-family: 'Courier New', monospace;
             font-size: 12px;
@@ -51,6 +70,24 @@ export default function CustomerReceipt({ order, businessName }: CustomerReceipt
         <div style={{ fontSize: "10px", marginTop: "2px" }}>Receipt</div>
       </div>
 
+      {/* Abnormal-state banner — a reprinted, refunded or voided slip must be
+          visibly different from an original, or it stops being evidence of
+          anything. */}
+      {banner && (
+        <div
+          style={{
+            textAlign: "center",
+            fontWeight: "bold",
+            fontSize: "13px",
+            border: "1px solid #000",
+            padding: "3px",
+            marginBottom: "6px",
+          }}
+        >
+          *** {banner} ***
+        </div>
+      )}
+
       {/* Order info */}
       <div style={{ borderBottom: "1px dashed #000", paddingBottom: "6px", marginBottom: "6px" }}>
         <div style={{ fontWeight: "bold", fontSize: "18px", textAlign: "center" }}>
@@ -60,6 +97,7 @@ export default function CustomerReceipt({ order, businessName }: CustomerReceipt
           {formatDateTime(order.created_at)}
         </div>
         {order.customer_name && <div><strong>Customer:</strong> {order.customer_name}</div>}
+        {order.table_number && <div><strong>Table:</strong> {order.table_number}</div>}
       </div>
 
       {/* Items */}
@@ -81,6 +119,16 @@ export default function CustomerReceipt({ order, businessName }: CustomerReceipt
                   + {ao.name}{(ao.quantity ?? 1) > 1 ? ` x${ao.quantity}` : ""}
                 </div>
               ))}
+              {item.removed_ingredients_snapshot?.map((ing) => (
+                <div key={ing.id} style={{ fontSize: "10px", paddingLeft: "8px", color: "#333" }}>
+                  No {ing.name}
+                </div>
+              ))}
+              {item.special_instructions && (
+                <div style={{ fontSize: "10px", paddingLeft: "8px", color: "#333", fontStyle: "italic" }}>
+                  {item.special_instructions}
+                </div>
+              )}
             </div>
           ))
         ) : (
@@ -121,6 +169,26 @@ export default function CustomerReceipt({ order, businessName }: CustomerReceipt
 
       <div style={{ marginTop: "6px", fontSize: "10px" }}>
         <div><strong>Payment:</strong> {order.payment_method || "—"} ({order.payment_status})</div>
+        {order.payment_method === "CASH" && order.cash_tendered_cents != null && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Cash received</span>
+              <span>{formatCurrency(order.cash_tendered_cents)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Change</span>
+              <span>{formatCurrency(order.change_due_cents)}</span>
+            </div>
+          </>
+        )}
+        {order.payment_reference && (
+          <div><strong>Reference:</strong> {order.payment_reference}</div>
+        )}
+        {(order.payment_status === "REFUNDED" || order.payment_status === "PARTIALLY_REFUNDED" || order.payment_status === "VOIDED") && (
+          <div style={{ fontWeight: "bold", marginTop: "2px" }}>
+            {order.payment_status === "VOIDED" ? "SALE VOIDED" : `REFUNDED: ${formatCurrency(order.refund_amount_cents)}`}
+          </div>
+        )}
       </div>
 
       {/* Footer */}

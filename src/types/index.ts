@@ -73,10 +73,21 @@ export interface OrderItem {
   // backend/app/pos/pricing.py) -- group_id/option_id are also present but
   // unused by this app today.
   selected_options_snapshot: Array<{ group_name: string; option_name: string; price_delta_cents: number }> | null;
+  removed_ingredients_snapshot: Array<{ id: string; name: string }> | null;
   special_instructions: string | null;
 }
 
-export type PaymentStatus = 'UNPAID' | 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'CASH_ON_COLLECTION';
+export type PaymentStatus =
+  | 'UNPAID'
+  | 'PENDING'
+  | 'PAID'
+  | 'PARTIALLY_REFUNDED'
+  | 'REFUNDED'
+  | 'FAILED'
+  | 'VOIDED'
+  | 'CASH_ON_COLLECTION';
+
+export type POSPaymentMethod = 'CASH' | 'CARD' | 'OTHER';
 
 // Backend OrderResponse
 export interface Order {
@@ -90,7 +101,15 @@ export interface Order {
   payment_link_url: string | null;
   paid_at: string | null;
   order_mode: string;
+  table_number: string | null;
   source: string;
+  cash_tendered_cents: number | null;
+  change_due_cents: number | null;
+  till_session_id: string | null;
+  created_by_user_id: string | null;
+  refund_reference: string | null;
+  refund_amount_cents: number | null;
+  refunded_at: string | null;
   customer_name: string | null;
   phone_number: string | null;
   delivery_address: string | null;
@@ -123,6 +142,7 @@ export type OrderStatus =
   | "READY"
   | "COLLECTED"
   | "DELIVERED"
+  | "COMPLETED"
   | "CANCELLED";
 
 export interface StatusUpdateRequest {
@@ -184,8 +204,14 @@ export interface MenuOptionGroup {
   options: MenuOptionChoice[];
 }
 
+export interface RemovableIngredient {
+  id: string;
+  name: string;
+}
+
 export interface MenuItemOptions {
   option_groups: MenuOptionGroup[];
+  removable_ingredients?: RemovableIngredient[];
 }
 
 export interface MenuAddOn {
@@ -211,6 +237,7 @@ export interface MenuItemEntry {
   is_active: boolean;
   sort_order: number;
   image_url: string | null;
+  requires_preparation: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -227,16 +254,72 @@ export interface POSOrderItemRequest {
   quantity: number;
   selected_option_ids: Record<string, string>;
   add_on_selections: POSAddOnSelectionRequest[];
+  removed_ingredient_ids: string[];
   special_instructions?: string | null;
 }
 
 export interface POSOrderCreateRequest {
   items: POSOrderItemRequest[];
   order_mode: "PICKUP" | "DELIVERY" | "DINE_IN";
+  table_number?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   discount_cents?: number;
   discount_reason?: string | null;
+  payment_method: POSPaymentMethod;
+  cash_tendered_cents?: number | null;
+  payment_reference?: string | null;
+  idempotency_key?: string | null;
+}
+
+export interface POSRefundRequest {
+  amount_cents?: number | null;
+  reason?: string | null;
+}
+
+export interface POSVoidRequest {
+  reason: string;
+}
+
+// GET /v1/business/pos/settings — staff-readable subset of business settings
+export interface POSSettings {
+  cash_enabled: boolean;
+  card_enabled: boolean;
+  other_payment_enabled: boolean;
+  table_number_required: boolean;
+  delivery_fee_cents: number;
+  max_staff_discount_cents: number;
+
+  // VAT — the till shows a tax line before checkout
+  vat_registered: boolean;
+  vat_rate_basis_points: number;
+  vat_inclusive_pricing: boolean;
+
+  // Receipt / thermal printing
+  receipt_paper_width_mm: number;
+  receipt_auto_print: boolean;
+  receipt_copies: number;
+  print_kitchen_receipt: boolean;
+
+  // Inventory — gates the quick-wastage action on the till
+  inventory_enabled: boolean;
+}
+
+// ── Inventory (staff-facing subset) ────────────────────────────────────────
+export interface IngredientSummary {
+  id: string;
+  name: string;
+  canonical_unit: "GRAM" | "MILLILITRE" | "UNIT";
+  count_method: "UNIT_COUNT" | "WEIGHT" | "VOLUME";
+  on_hand_milli: number;
+  on_hand_display: string;
+  below_par: boolean;
+}
+
+export interface WastageReasonOption {
+  value: string;
+  label: string;
+  requires_note: boolean;
 }
 
 // ── Till (cash-up) — backend/app/api/v1/routes_pos.py ──────────────────────
@@ -247,6 +330,8 @@ export interface TillSession {
   expected_cash_cents: number | null;
   counted_cash_cents: number | null;
   variance_cents: number | null;
+  cash_sales_cents?: number | null;
+  cash_refunds_cents?: number | null;
   opened_at: string;
   closed_at: string | null;
 }
@@ -271,8 +356,11 @@ export interface CartLine {
   name: string;
   basePriceCents: number;
   quantity: number;
+  requiresPreparation: boolean;
   selectedOptionIds: Record<string, string>;
   selectedOptionsDisplay: { groupName: string; optionName: string; priceDeltaCents: number }[];
   addOnSelections: { addOnId: string; name: string; priceCents: number; quantity: number }[];
+  removedIngredientIds: string[];
+  removedIngredientsDisplay: { id: string; name: string }[];
   specialInstructions: string | null;
 }

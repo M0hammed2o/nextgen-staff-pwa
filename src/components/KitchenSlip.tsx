@@ -56,6 +56,11 @@ export default function KitchenSlip({ order, businessName }: KitchenSlipProps) {
         <div style={{ fontWeight: "bold", fontSize: "18px", textAlign: "center" }}>
           #{order.order_number ?? "—"}
         </div>
+        {order.payment_status === "PAID" && (
+          <div style={{ textAlign: "center", fontWeight: "bold", fontSize: "13px", margin: "2px 0" }}>
+            *** PAID ***
+          </div>
+        )}
         <div style={{ fontSize: "10px", textAlign: "center", marginTop: "2px" }}>
           {formatDateTime(order.created_at)}
         </div>
@@ -63,7 +68,7 @@ export default function KitchenSlip({ order, businessName }: KitchenSlipProps) {
           <strong>Status:</strong> {order.status}
         </div>
         <div>
-          <strong>Mode:</strong> {order.order_mode || "—"}
+          <strong>Mode:</strong> {order.order_mode || "—"}{order.table_number ? ` — Table ${order.table_number}` : ""}
         </div>
         {order.customer_name && (
           <div><strong>Customer:</strong> {order.customer_name}</div>
@@ -90,6 +95,11 @@ export default function KitchenSlip({ order, businessName }: KitchenSlipProps) {
               <div style={{ fontWeight: "bold" }}>
                 {item.quantity}x {item.name_snapshot}
               </div>
+              {item.removed_ingredients_snapshot?.map((ing) => (
+                <div key={ing.id} style={{ fontSize: "10px", fontWeight: "bold", paddingLeft: "8px" }}>
+                  NO {ing.name.toUpperCase()}
+                </div>
+              ))}
               {item.add_ons_snapshot?.map((ao) => (
                 <div key={ao.name} style={{ fontSize: "10px", paddingLeft: "8px" }}>
                   + {ao.name}{(ao.quantity ?? 1) > 1 ? ` x${ao.quantity}` : ""}
@@ -101,8 +111,8 @@ export default function KitchenSlip({ order, businessName }: KitchenSlipProps) {
                 </div>
               ))}
               {item.special_instructions && (
-                <div style={{ fontSize: "10px", fontStyle: "italic", paddingLeft: "8px" }}>
-                  → {item.special_instructions}
+                <div style={{ fontSize: "11px", fontWeight: "bold", fontStyle: "italic", paddingLeft: "8px" }}>
+                  → {item.special_instructions.toUpperCase()}
                 </div>
               )}
             </div>
