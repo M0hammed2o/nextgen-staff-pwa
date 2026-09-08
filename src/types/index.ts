@@ -303,6 +303,13 @@ export interface POSSettings {
 
   // Inventory — gates the quick-wastage action on the till
   inventory_enabled: boolean;
+
+  // Which tabs this tenant's bottom navigation should show. Display
+  // configuration only — a hidden tab never disables the feature, and
+  // every route behind one still enforces its own permissions.
+  staff_live_orders_tab_enabled: boolean;
+  staff_wastage_tab_enabled: boolean;
+  staff_stocktake_tab_enabled: boolean;
 }
 
 // ── Inventory (staff-facing subset) ────────────────────────────────────────
@@ -320,6 +327,62 @@ export interface WastageReasonOption {
   value: string;
   label: string;
   requires_note: boolean;
+}
+
+// ── Stocktake (staff-facing) — backend/app/api/v1/routes_stocktake.py ─────
+export interface StocktakeLine {
+  ingredient_id: string;
+  ingredient_name: string;
+  canonical_unit: "GRAM" | "MILLILITRE" | "UNIT";
+  count_method: "UNIT_COUNT" | "WEIGHT" | "VOLUME";
+  unit_label: string | null;
+  counted_quantity_milli: number | null;
+  counted_display: string | null;
+  expected_quantity_milli: number;
+  expected_display: string;
+  variance_quantity_milli: number;
+  variance_display: string;
+  variance_value_cents: number;
+  variance_percent: string;
+  is_flagged: boolean;
+  notes: string | null;
+}
+
+export interface StocktakeSession {
+  id: string;
+  reference: string | null;
+  status: "DRAFT" | "COMPLETED" | "APPROVED" | "CANCELLED";
+  cutoff_at: string;
+  period_start_at: string | null;
+  opened_at: string;
+  completed_at: string | null;
+  approved_at: string | null;
+  total_variance_value_cents: number;
+  total_theoretical_value_cents: number;
+  accuracy_percent: string;
+  is_locked: boolean;
+  lines: StocktakeLine[];
+  notes: string | null;
+}
+
+/** One row of the history list — GET /v1/business/stocktake */
+export interface StocktakeHistoryEntry {
+  id: string;
+  reference: string | null;
+  status: "DRAFT" | "COMPLETED" | "APPROVED" | "CANCELLED";
+  opened_at: string | null;
+  cutoff_at: string | null;
+  completed_at: string | null;
+  approved_at: string | null;
+  opened_by_name: string | null;
+  completed_by_name: string | null;
+  approved_by_name: string | null;
+  line_count: number;
+  counted_line_count: number;
+  total_variance_value_cents: number;
+  total_theoretical_value_cents: number;
+  is_locked: boolean;
+  notes: string | null;
 }
 
 // ── Till (cash-up) — backend/app/api/v1/routes_pos.py ──────────────────────

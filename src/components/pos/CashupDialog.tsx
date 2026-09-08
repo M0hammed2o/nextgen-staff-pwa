@@ -88,7 +88,9 @@ export default function CashupDialog({ open, onClose }: Props) {
     <Dialog open={open} onOpenChange={(o) => !o && handleDialogClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Cash-up</DialogTitle>
+          <DialogTitle>
+            {result ? "Till closed" : current ? "Close the till" : "Open the till"}
+          </DialogTitle>
         </DialogHeader>
 
         {isLoading ? (
@@ -145,7 +147,13 @@ export default function CashupDialog({ open, onClose }: Props) {
                   value={countedCash}
                   onChange={(e) => setCountedCash(e.target.value)}
                   placeholder="0.00"
+                  autoFocus
                 />
+                <p className="text-xs text-muted-foreground">
+                  Count the drawer first. The expected figure is shown only after you
+                  submit — a count taken against a number you have already seen is not
+                  a count.
+                </p>
               </div>
             </div>
           ) : (
@@ -155,7 +163,10 @@ export default function CashupDialog({ open, onClose }: Props) {
           )
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">No till is open yet.</p>
+            <p className="text-sm text-muted-foreground">
+              Count the cash already in the drawer and enter it below. Sales are
+              blocked until the till is open.
+            </p>
             <div className="space-y-1.5">
               <Label htmlFor="float">Opening float (R)</Label>
               <Input
@@ -165,7 +176,12 @@ export default function CashupDialog({ open, onClose }: Props) {
                 value={openingFloat}
                 onChange={(e) => setOpeningFloat(e.target.value)}
                 placeholder="0.00"
+                autoFocus
               />
+              <p className="text-xs text-muted-foreground">
+                The change float you start the shift with. Every cash-up variance is
+                measured from this number, so count it properly.
+              </p>
             </div>
           </div>
         )}

@@ -284,13 +284,18 @@ export default function Pos() {
           <button
             onClick={() => setCashupOpen(true)}
             className={cn(
-              "flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium",
-              tillOpen ? "bg-secondary text-foreground active:bg-muted" : "bg-destructive/10 text-destructive"
+              "flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold",
+              tillOpen
+                ? "bg-secondary text-foreground active:bg-muted"
+                : "bg-primary text-primary-foreground shadow-sm active:opacity-90"
             )}
-            aria-label="Cash-up"
+            aria-label={tillOpen ? "Cash-up" : "Open the till"}
           >
             <Wallet className="h-5 w-5" />
-            {!tillOpen && <span>Till closed</span>}
+            {/* Previously this read "Till closed" — a status, styled like a
+                badge, which told staff what was wrong but not that tapping it
+                was the fix. It now names the action it performs. */}
+            <span>{tillOpen ? "Cash-up" : "Open till"}</span>
           </button>
         </div>
 
@@ -329,6 +334,33 @@ export default function Pos() {
           </div>
         )}
       </header>
+
+      {/* The till being closed is the single most common reason a sale cannot
+          be rung up, and the header button alone was too easy to miss on a
+          busy screen. This states the blocker in plain words and carries the
+          action that clears it, in the place staff are already looking. */}
+      {!tillOpen && (
+        <div className="px-4 pt-4">
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+            <div className="flex items-start gap-3">
+              <Wallet className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">The till is closed</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Open it with the cash already in the drawer to start selling. Until
+                  then, menu items and checkout stay locked.
+                </p>
+                <button
+                  onClick={() => setCashupOpen(true)}
+                  className="mt-3 h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground active:opacity-90 sm:w-auto"
+                >
+                  Open till
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="md:flex md:flex-1 md:overflow-hidden">
         {/* Left: product grid */}

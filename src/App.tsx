@@ -11,6 +11,7 @@ import Pos from "@/pages/Pos";
 import OrderDetail from "@/pages/OrderDetail";
 import CompletedOrders from "@/pages/CompletedOrders";
 import Wastage from "@/pages/Wastage";
+import Stocktake from "@/pages/Stocktake";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/NotFound";
 
@@ -67,6 +68,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <Wastage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stocktake"
+            element={
+              <ProtectedRoute>
+                <Stocktake />
               </ProtectedRoute>
             }
           />
