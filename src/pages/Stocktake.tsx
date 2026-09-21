@@ -6,6 +6,14 @@ import type { StocktakeHistoryEntry, StocktakeLine, StocktakeSession } from "@/t
 import { cn, formatCurrency } from "@/lib/utils";
 import { ClipboardCheck, History, Loader2 } from "lucide-react";
 import { useTouchField } from "@/hooks/useTouchField";
+import {
+  buildCountsPayload,
+  defaultUnitFor,
+  seedCountEntries,
+  unitOptionsFor,
+  type CountEntry,
+  type StocktakePayloadLine,
+} from "@/lib/stocktake-units";
 
 /**
  * Staff stocktake — start a count, enter what is physically on the shelf,
@@ -25,41 +33,77 @@ import { useTouchField } from "@/hooks/useTouchField";
 
 type Tab = "COUNT" | "HISTORY";
 
-/** One count-entry row, its own component so it can carry its own useTouchField() hook — required since the parent renders a variable-length, search-filtered list. */
+/**
+ * One count-entry row, its own component so it can carry its own
+ * useTouchField() hook — required since the parent renders a
+ * variable-length, search-filtered list.
+ *
+ * KNOWN_BUGS BUG-0046 fix: every count now carries an explicit `unit`
+ * chosen from `unitOptionsFor()` (kg/g, L/ml, or the ingredient's own
+ * recognised count label) — the backend can no longer silently assume the
+ * canonical unit for a bare number. The unit picker defaults to whatever
+ * `defaultUnitFor()`/`seedCountEntries()` already showed before this fix
+ * (the ingredient's canonical unit), so existing counting habits don't
+ * change for staff who were already counting correctly.
+ */
 function StocktakeCountRow({
   line,
-  value,
-  onChange,
+  entry,
+  error,
+  onChangeQuantity,
+  onChangeUnit,
 }: {
   line: StocktakeLine;
-  value: string;
-  onChange: (v: string) => void;
+  entry: CountEntry;
+  error?: string;
+  onChangeQuantity: (v: string) => void;
+  onChangeUnit: (v: string) => void;
 }) {
-  const touch = useTouchField({ value, onChange, layout: "NUMERIC" });
-
-  function unitFor(unit: string, label: string | null): string {
-    if (unit === "GRAM") return "g";
-    if (unit === "MILLILITRE") return "ml";
-    return label || "units";
-  }
+  const touch = useTouchField({ value: entry.quantity, onChange: onChangeQuantity, layout: "NUMERIC" });
+  const unitOptions = unitOptionsFor(line.canonical_unit, line.unit_label);
 
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">{line.ingredient_name}</p>
-        <p className="text-xs text-muted-foreground">
-          Count in {unitFor(line.canonical_unit, line.unit_label)}
-        </p>
+    <li className="px-4 py-3">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-foreground">{line.ingredient_name}</p>
+          {unitOptions.length > 1 ? (
+            <div className="mt-1.5 flex gap-1.5" role="group" aria-label={`Unit for ${line.ingredient_name}`}>
+              {unitOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onChangeUnit(opt.value)}
+                  className={cn(
+                    "flex h-9 min-w-[44px] items-center justify-center rounded-md px-3 text-xs font-semibold",
+                    entry.unit === opt.value
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-foreground active:bg-muted"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Count in {unitOptions[0]?.label ?? "units"}</p>
+          )}
+        </div>
+        <input
+          type="number"
+          inputMode={touch.touchActive ? undefined : "decimal"}
+          value={entry.quantity}
+          onChange={(e) => onChangeQuantity(e.target.value)}
+          placeholder="—"
+          aria-label={`Quantity for ${line.ingredient_name}`}
+          className={cn(
+            "h-11 w-28 rounded-lg border bg-secondary px-3 text-right text-sm tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-primary",
+            error ? "border-destructive" : "border-border"
+          )}
+          {...touch.fieldProps}
+        />
       </div>
-      <input
-        type="number"
-        inputMode={touch.touchActive ? undefined : "decimal"}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="—"
-        className="h-11 w-28 rounded-lg border border-border bg-secondary px-3 text-right text-sm tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-        {...touch.fieldProps}
-      />
+      {error && <p className="mt-1 text-right text-xs text-destructive">{error}</p>}
     </li>
   );
 }
@@ -70,7 +114,8 @@ export default function Stocktake() {
   const enabled = settings?.inventory_enabled ?? false;
 
   const [tab, setTab] = useState<Tab>("COUNT");
-  const [counts, setCounts] = useState<Record<string, string>>({});
+  const [counts, setCounts] = useState<Record<string, CountEntry>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const searchTouch = useTouchField({ value: search, onChange: setSearch, layout: "QWERTY" });
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +135,9 @@ export default function Stocktake() {
 
   // Counting is a long screen on a phone; losing typed numbers to a refetch
   // would be worse than a stale total, so entries are seeded once per session
-  // and never overwritten by a later refetch of the same session.
+  // and never overwritten by a later refetch of the same session. Seeded via
+  // seedCountEntries() so every entry — even one nobody has touched yet —
+  // already carries the correct default unit (BUG-0046).
   useEffect(() => {
     if (!current) {
       setCounts({});
@@ -98,12 +145,14 @@ export default function Stocktake() {
     }
     setCounts((prev) => {
       if (Object.keys(prev).length > 0) return prev;
-      const seeded: Record<string, string> = {};
-      for (const line of current.lines) {
-        seeded[line.ingredient_id] =
-          line.counted_quantity_milli != null ? String(line.counted_quantity_milli / 1000) : "";
-      }
-      return seeded;
+      return seedCountEntries(
+        current.lines.map((line) => ({
+          ingredient_id: line.ingredient_id,
+          canonical_unit: line.canonical_unit,
+          unit_label: line.unit_label,
+          counted_quantity_milli: line.counted_quantity_milli,
+        }))
+      );
     });
   }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -111,6 +160,7 @@ export default function Stocktake() {
     mutationFn: () => apiClient.post<StocktakeSession>("/v1/business/stocktake/open", {}),
     onSuccess: () => {
       setCounts({});
+      setFieldErrors({});
       setError(null);
       setNotice(null);
       queryClient.invalidateQueries({ queryKey: ["stocktake-current"] });
@@ -119,11 +169,14 @@ export default function Stocktake() {
     onError: (e: Error) => setError(e.message || "Could not start the count"),
   });
 
+  // Every line always carries an explicit `unit` (BUG-0046) — see
+  // src/lib/stocktake-units.ts::buildCountsPayload.
   const saveMutation = useMutation({
-    mutationFn: (lines: { ingredient_id: string; quantity: string }[]) =>
+    mutationFn: (lines: StocktakePayloadLine[]) =>
       apiClient.post<StocktakeSession>(`/v1/business/stocktake/${current?.id}/counts`, { lines }),
     onSuccess: () => {
       setError(null);
+      setFieldErrors({});
       setNotice("Counts saved.");
       queryClient.invalidateQueries({ queryKey: ["stocktake-current"] });
     },
@@ -150,18 +203,26 @@ export default function Stocktake() {
   }, [current, search]);
 
   const enteredCount = useMemo(
-    () => Object.values(counts).filter((v) => v.trim() !== "").length,
+    () => Object.values(counts).filter((v) => v.quantity.trim() !== "").length,
     [counts]
   );
 
+  // Validates and always attaches an explicit unit per line (BUG-0046) —
+  // never sends a bare quantity the backend has to guess the meaning of.
+  // An invalid entry (bad number, missing unit) is rejected inline and
+  // never included in what gets sent.
   function handleSave() {
-    const payload = Object.entries(counts)
-      .filter(([, v]) => v.trim() !== "")
-      .map(([ingredient_id, quantity]) => ({ ingredient_id, quantity: quantity.trim() }));
+    const { lines: payload, errors } = buildCountsPayload(counts);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError("Fix the highlighted count(s) before saving.");
+      return;
+    }
     if (payload.length === 0) {
       setError("Enter at least one count first");
       return;
     }
+    setError(null);
     saveMutation.mutate(payload);
   }
 
@@ -248,14 +309,27 @@ export default function Stocktake() {
             </div>
 
             <ul className="divide-y divide-border">
-              {lines.map((line) => (
-                <StocktakeCountRow
-                  key={line.ingredient_id}
-                  line={line}
-                  value={counts[line.ingredient_id] ?? ""}
-                  onChange={(v) => setCounts((c) => ({ ...c, [line.ingredient_id]: v }))}
-                />
-              ))}
+              {lines.map((line) => {
+                const entry =
+                  counts[line.ingredient_id] ?? {
+                    quantity: "",
+                    unit: defaultUnitFor(line.canonical_unit, line.unit_label),
+                  };
+                return (
+                  <StocktakeCountRow
+                    key={line.ingredient_id}
+                    line={line}
+                    entry={entry}
+                    error={fieldErrors[line.ingredient_id]}
+                    onChangeQuantity={(v) =>
+                      setCounts((c) => ({ ...c, [line.ingredient_id]: { ...entry, quantity: v } }))
+                    }
+                    onChangeUnit={(v) =>
+                      setCounts((c) => ({ ...c, [line.ingredient_id]: { ...entry, unit: v } }))
+                    }
+                  />
+                );
+              })}
               {lines.length === 0 && (
                 <li className="px-4 py-8 text-center text-sm text-muted-foreground">
                   No ingredients match that search.

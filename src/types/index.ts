@@ -313,10 +313,16 @@ export interface POSSettings {
 }
 
 // ── Inventory (staff-facing subset) ────────────────────────────────────────
+// Matches shared/enums.py::CanonicalUnit and mirrors the equivalent type in
+// nextgen-insights-main/src/types/inventory.ts — kept as its own small type
+// here since the two frontend repos have no shared package (see WORKLOG.md
+// for the acknowledged duplication).
+export type CanonicalUnit = "GRAM" | "MILLILITRE" | "UNIT";
+
 export interface IngredientSummary {
   id: string;
   name: string;
-  canonical_unit: "GRAM" | "MILLILITRE" | "UNIT";
+  canonical_unit: CanonicalUnit;
   count_method: "UNIT_COUNT" | "WEIGHT" | "VOLUME";
   on_hand_milli: number;
   on_hand_display: string;
@@ -333,7 +339,7 @@ export interface WastageReasonOption {
 export interface StocktakeLine {
   ingredient_id: string;
   ingredient_name: string;
-  canonical_unit: "GRAM" | "MILLILITRE" | "UNIT";
+  canonical_unit: CanonicalUnit;
   count_method: "UNIT_COUNT" | "WEIGHT" | "VOLUME";
   unit_label: string | null;
   counted_quantity_milli: number | null;
