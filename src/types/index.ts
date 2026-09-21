@@ -344,6 +344,19 @@ export interface StocktakeLine {
   unit_label: string | null;
   counted_quantity_milli: number | null;
   counted_display: string | null;
+  /**
+   * What staff actually typed and which unit token they typed it in (e.g.
+   * "2" / "KG") — as opposed to `counted_quantity_milli`, which is always in
+   * the ingredient's CANONICAL unit (e.g. milligrams). Only present once the
+   * backend has a value to return for this line (see
+   * StocktakeLineResponse in routes_stocktake.py); null for a line with no
+   * count yet, or one saved before this field existed. Seeding the editable
+   * field from these (see stocktake-units.ts::seedCountEntries) — instead of
+   * re-deriving a value from the canonical quantity in a different unit —
+   * is what keeps a reload showing "2 kg" as "2 kg", not "2000 g".
+   */
+  entered_quantity: string | null;
+  entered_unit: string | null;
   expected_quantity_milli: number;
   expected_display: string;
   variance_quantity_milli: number;

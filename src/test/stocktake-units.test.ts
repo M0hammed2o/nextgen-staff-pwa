@@ -137,4 +137,38 @@ describe("seedCountEntries — reopening a saved draft", () => {
     ]);
     expect(seeded["ing-1"]).toEqual({ quantity: "", unit: "PORTION" });
   });
+
+  // Regression test for the wave0a launch-blocker: a count entered as
+  // "2 kg" was reloading as "2000 g" (same number of grams, wrong unit and
+  // a 1000x-larger-looking figure) because seeding only ever used
+  // counted_quantity_milli (always canonical, i.e. grams) and never the
+  // unit actually typed. entered_quantity/entered_unit (now returned by
+  // the backend, see StocktakeLineResponse) preserve the exact round trip.
+  it("seeds from entered_quantity/entered_unit when present — '2 kg' reloads as '2 kg', not '2000 g'", () => {
+    const seeded = seedCountEntries([
+      {
+        ingredient_id: "ing-1",
+        canonical_unit: "GRAM",
+        unit_label: null,
+        counted_quantity_milli: 2_000_000, // 2000 g, stored canonically
+        entered_quantity: "2",
+        entered_unit: "KG",
+      },
+    ]);
+    expect(seeded["ing-1"]).toEqual({ quantity: "2", unit: "KG" });
+  });
+
+  it("falls back to the canonical-unit seed when entered_quantity/entered_unit are null (pre-fix historical lines)", () => {
+    const seeded = seedCountEntries([
+      {
+        ingredient_id: "ing-1",
+        canonical_unit: "GRAM",
+        unit_label: null,
+        counted_quantity_milli: 2_000_000,
+        entered_quantity: null,
+        entered_unit: null,
+      },
+    ]);
+    expect(seeded["ing-1"]).toEqual({ quantity: "2000", unit: "G" });
+  });
 });

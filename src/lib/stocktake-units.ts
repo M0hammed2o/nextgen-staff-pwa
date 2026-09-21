@@ -154,28 +154,35 @@ export interface StocktakeLineForSeed {
   canonical_unit: CanonicalUnit;
   unit_label: string | null | undefined;
   counted_quantity_milli: number | null;
+  /** What staff actually typed/chose, when the backend has it (see StocktakeLine in types/index.ts). */
+  entered_quantity?: string | null;
+  entered_unit?: string | null;
 }
 
 /**
  * Seed the editable count entries for a (re)opened draft.
  *
- * The stocktake API does not currently return the unit a count was
- * originally entered in (only `counted_quantity_milli`, in canonical
- * units, and a server-formatted `counted_display` string — see
- * StocktakeLineResponse in routes_stocktake.py). So a resumed count is
- * always seeded in this ingredient's DEFAULT unit, which is defined to be
- * the same unit its canonical storage is already in (g / ml / each-or-its
- * recognised count label) — converting the stored canonical quantity back
- * into that unit is therefore always an exact, lossless round-trip, and
- * resubmitting the seeded value unchanged reproduces exactly what was
- * saved. This sidesteps needing the (currently unreturned) entered unit
- * rather than guessing it.
+ * Preferred path: the backend now returns `entered_quantity`/`entered_unit`
+ * — exactly what staff typed and which unit token they typed it in — so
+ * seeding from those is an exact, lossless round-trip regardless of which
+ * unit was chosen (e.g. "2 kg" reloads as "2 kg", not "2000 g").
+ *
+ * Fallback: for a line with no `entered_quantity`/`entered_unit` (no count
+ * yet, or one saved before these fields existed), seed in this ingredient's
+ * DEFAULT unit instead — the same unit its canonical storage is already in
+ * (g / ml / each-or-its recognised count label) — converting the stored
+ * canonical quantity into that unit is itself an exact, lossless
+ * conversion, just not necessarily in the unit that was originally typed.
  */
 export function seedCountEntries(
   lines: StocktakeLineForSeed[]
 ): Record<string, CountEntry> {
   const seeded: Record<string, CountEntry> = {};
   for (const line of lines) {
+    if (line.entered_quantity != null && line.entered_quantity !== "" && line.entered_unit) {
+      seeded[line.ingredient_id] = { quantity: line.entered_quantity, unit: line.entered_unit };
+      continue;
+    }
     const unit = defaultUnitFor(line.canonical_unit, line.unit_label);
     const quantity =
       line.counted_quantity_milli != null ? String(line.counted_quantity_milli / 1000) : "";

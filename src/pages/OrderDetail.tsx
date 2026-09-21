@@ -112,7 +112,12 @@ export default function OrderDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-8">
+    // BottomNav hides itself on this route, so no bottom-nav clearance is
+    // needed here — but ReversalPanel's reason field (below) now opens the
+    // on-screen keyboard on a plain, normally-scrolling page (no dialog),
+    // so this still reserves room for it, same idea as
+    // useTouchKeyboardSpacerStyle used inside dialogs.
+    <div className="min-h-screen bg-background" style={{ paddingBottom: "calc(2rem + var(--touch-keyboard-height, 0px))" }}>
       {/* Kitchen Slip (hidden, only rendered for printing) */}
       {showSlip && (
         <div className="fixed top-0 left-0 z-[9999]">

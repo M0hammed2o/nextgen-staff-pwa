@@ -2,6 +2,7 @@ import { useState } from "react";
 import { apiClient } from "@/lib/api";
 import type { Order } from "@/types";
 import { formatCurrency } from "@/lib/utils";
+import { useTouchField } from "@/hooks/useTouchField";
 
 interface ReversalPanelProps {
   order: Order;
@@ -38,6 +39,12 @@ export default function ReversalPanel({
   const [restoreStock, setRestoreStock] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Called unconditionally, above every early return below, per the Rules
+  // of Hooks — even on the branches that never render the reason field at
+  // all (already-reversed / not-a-manager), this still registers/unregisters
+  // cleanly since useTouchField() no-ops outside touch mode and this field
+  // is simply never focused on those branches.
+  const reasonTouch = useTouchField({ value: reason, onChange: setReason, layout: "QWERTY", maxLength: 255 });
 
   const isManager = role === "OWNER" || role === "MANAGER";
   const alreadyReversed =
@@ -68,10 +75,18 @@ export default function ReversalPanel({
   }
 
   if (!isManager) {
+    // The staff PWA's PIN login is deliberately STAFF-only (a 4-digit PIN
+    // must never carry manager-level API power — see auth_service.py) and
+    // get_staff_directory() excludes OWNER/MANAGER accounts from the PIN
+    // picker entirely, so no manager can ever sign into THIS app to clear
+    // this gate from here. Voiding/refunding is done from the Manager
+    // Dashboard instead (password login) — this used to be a dead end with
+    // no way forward at all; now it points at the actual place to go.
     return (
       <div className="rounded-xl border border-border bg-card p-4">
         <p className="text-sm text-muted-foreground">
-          A manager or owner is needed to void or refund this sale.
+          Ask a manager or the owner to void or refund this order from the Manager
+          Dashboard → Orders → {order.order_number}.
         </p>
       </div>
     );
@@ -148,6 +163,7 @@ export default function ReversalPanel({
               autoFocus
               placeholder={mode === "void" ? "e.g. Wrong item rung up" : "e.g. Customer unhappy"}
               className="mt-1 h-12 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+              {...reasonTouch.fieldProps}
             />
           </label>
 

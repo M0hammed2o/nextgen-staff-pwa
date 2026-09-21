@@ -154,6 +154,8 @@ export default function Stocktake() {
           canonical_unit: line.canonical_unit,
           unit_label: line.unit_label,
           counted_quantity_milli: line.counted_quantity_milli,
+          entered_quantity: line.entered_quantity,
+          entered_unit: line.entered_unit,
         }))
       );
     });
