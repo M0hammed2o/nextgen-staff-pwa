@@ -18,7 +18,8 @@ import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw } from "l
 import { cn, formatCurrency } from "@/lib/utils";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
-import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
+import { useTouchKeyboardContext, useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -28,6 +29,8 @@ function newIdempotencyKey(): string {
 export default function Pos() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { close: closeTouchKeyboard } = useTouchKeyboardContext();
+  const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState<string | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [optionsItem, setOptionsItem] = useState<MenuItemEntry | null>(null);
@@ -215,7 +218,12 @@ export default function Pos() {
     };
     setCart((prev) => [...prev, newLine]);
     setOptionsItem(null);
-    setMobileCartOpen(true);
+    // The mobile cart dialog's own content is `md:hidden` (the persistent
+    // desktop/tablet cart panel is always visible instead) — opening it at
+    // md+ widths rendered a full-screen dialog overlay with nothing visible
+    // inside it, and the very next tap anywhere just dismissed that blank
+    // overlay instead of reaching whatever the cashier meant to tap.
+    if (isMobile) setMobileCartOpen(true);
   }
 
   function updateQty(key: string, quantity: number) {
@@ -284,6 +292,12 @@ export default function Pos() {
     setMobileCartOpen(false);
     setLastOrder(order);
     resetForNextSale();
+    // Don't wait for PaymentDialog's close animation to unmount the cash
+    // field (that's what used to leave the keyboard open, covering the
+    // "Sale complete" overlay's "New sale" button for the duration of the
+    // transition) — close it the instant the sale is known to have
+    // succeeded.
+    closeTouchKeyboard();
     queryClient.invalidateQueries({ queryKey: ["live-orders"] });
 
     // Print AFTER the sale is safely saved, and never inside the try that
@@ -426,7 +440,17 @@ export default function Pos() {
     // sets) so the persistent desktop/tablet cart panel's checkout button
     // and order total are pushed up above the keyboard instead of being
     // covered by it, without any JS-driven layout branching here.
-    <div className="min-h-screen bg-background pb-28 md:flex md:h-[calc(100vh-var(--touch-keyboard-height,0px))] md:flex-col md:pb-0">
+    // `md:min-h-0` is load-bearing: the base `min-h-screen` (needed on
+    // mobile, where this is a normally-scrolling document) sets a
+    // min-height of 100vh, which previously silently WON over the `md:h-`
+    // rule above whenever the keyboard was open (min-height always wins
+    // over a smaller explicit height) — the container never actually
+    // shrank, so content stayed exactly as tall as the keyboard covered.
+    // `md:pb-[var(--bottom-nav-height,0px)]` reserves real, measured space
+    // (BottomNav.tsx) for the always-`fixed` bottom nav at md+ widths too —
+    // previously `md:pb-0` reserved none at all, leaving only a ~5px sliver
+    // of the Checkout button tappable above the nav at 1366x768/1024x768.
+    <div className="min-h-screen bg-background pb-28 md:min-h-0 md:flex md:h-[calc(100vh-var(--touch-keyboard-height,0px))] md:flex-col md:pb-[var(--bottom-nav-height,0px)]">
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top">
         <div className="flex items-center justify-between px-4 py-4">
           <div>

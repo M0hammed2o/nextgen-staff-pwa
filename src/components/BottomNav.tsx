@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { usePOSSettings } from "@/lib/pos-settings";
 import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
@@ -97,23 +98,45 @@ export default function BottomNav() {
   const location = useLocation();
   const { data: settings = null } = usePOSSettings();
   const { active: touchKeyboardActive } = useTouchKeyboardContext();
+  const navRef = useRef<HTMLElement | null>(null);
 
-  // Hide on login and order detail
-  if (location.pathname === "/login" || location.pathname.startsWith("/orders/")) {
-    return null;
-  }
+  // Hide on login, order detail, and while the on-screen keyboard is up (the
+  // two occupy the same screen real estate, and there is nothing useful to
+  // tap in the nav bar while a field is being typed into).
+  const isHidden =
+    location.pathname === "/login" || location.pathname.startsWith("/orders/") || touchKeyboardActive;
 
-  // Hide while the on-screen keyboard is up — the two occupy the same
-  // screen real estate, and there is nothing useful to tap in the nav bar
-  // while a field is being typed into.
-  if (touchKeyboardActive) {
-    return null;
-  }
+  // Publish this bar's REAL rendered height as --bottom-nav-height so page
+  // layouts (Pos.tsx etc.) can reserve exactly enough space above this
+  // always-`fixed` bar for their own bottom-pinned content (e.g. the
+  // Checkout button), instead of a guessed constant that can silently drift
+  // from the real height (safe-area-inset-bottom, font scaling) and leave
+  // only a few pixels of a button tappable. 0px whenever the bar isn't
+  // actually on screen, so a page never reserves dead space for it.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isHidden || !navRef.current) {
+      root.style.setProperty("--bottom-nav-height", "0px");
+      return;
+    }
+    const el = navRef.current;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h) root.style.setProperty("--bottom-nav-height", `${Math.ceil(h)}px`);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.setProperty("--bottom-nav-height", "0px");
+    };
+  }, [isHidden]);
+
+  if (isHidden) return null;
 
   const tabs = TABS.filter((t) => !t.enabled || t.enabled(settings));
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
+    <nav ref={navRef} className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
       <div className="mx-auto flex max-w-lg">
         {tabs.map((tab) => (
           <NavLink
