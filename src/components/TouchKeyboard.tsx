@@ -97,7 +97,16 @@ export default function TouchKeyboard() {
     const el = rootRef.current;
     if (!active || !el) return;
     const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
+      const entry = entries[0];
+      if (!entry) return;
+      // contentRect EXCLUDES the root's own padding (pt-3/pb-*, ~24px) and
+      // border-t (1px) -- it measures only the content box, not what the
+      // element actually occupies on screen. Use the border box instead
+      // (what every consumer of --touch-keyboard-height needs to know to
+      // leave room for), falling back to offsetHeight -- which also
+      // includes padding/border -- for environments where borderBoxSize
+      // isn't populated (some WebKit versions).
+      const h = entry.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight;
       if (h) setMeasuredHeight(Math.ceil(h));
     });
     ro.observe(el);

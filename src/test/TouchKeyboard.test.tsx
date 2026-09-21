@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { useState } from "react";
 import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
@@ -120,6 +120,91 @@ describe("useTouchField + TouchKeyboard integration", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.queryByRole("group", { name: /on-screen keyboard/i })).not.toBeInTheDocument();
+  });
+
+  describe("keyboard height measurement (BUG-0069 regression)", () => {
+    // contentRect EXCLUDES the root's own padding/border, so it under-counts
+    // the space the keyboard actually occupies. A fake ResizeObserver lets
+    // this test drive the callback directly with entries shaped like the
+    // real API (borderBoxSize present or absent), which the global no-op
+    // stub in test/setup.ts never does.
+    class FakeResizeObserver {
+      static instances: FakeResizeObserver[] = [];
+      callback: ResizeObserverCallback;
+      target: Element | null = null;
+      constructor(cb: ResizeObserverCallback) {
+        this.callback = cb;
+        FakeResizeObserver.instances.push(this);
+      }
+      observe(el: Element) {
+        this.target = el;
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+
+    let originalResizeObserver: typeof window.ResizeObserver;
+
+    beforeEach(() => {
+      originalResizeObserver = window.ResizeObserver;
+      FakeResizeObserver.instances = [];
+      window.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
+    });
+
+    afterEach(() => {
+      window.ResizeObserver = originalResizeObserver;
+    });
+
+    it("publishes the border-box height, not the smaller content-box height", () => {
+      setStoredInputMode("touch");
+      renderHarness({ layout: "QWERTY" });
+      fireEvent.focus(screen.getByLabelText("field"));
+
+      const root = screen.getByRole("group", { name: /on-screen keyboard/i });
+      const observer = FakeResizeObserver.instances.at(-1)!;
+      expect(observer.target).toBe(root);
+
+      act(() => {
+        observer.callback(
+          [
+            {
+              target: root,
+              contentRect: { height: 208 } as DOMRectReadOnly,
+              borderBoxSize: [{ blockSize: 233, inlineSize: 400 }],
+            } as unknown as ResizeObserverEntry,
+          ],
+          observer as unknown as ResizeObserver
+        );
+      });
+
+      // Real bug: was "208px" (contentRect, missing ~25px of padding/border).
+      expect(document.documentElement.style.getPropertyValue("--touch-keyboard-height")).toBe("233px");
+    });
+
+    it("falls back to offsetHeight when borderBoxSize isn't populated (some WebKit versions)", () => {
+      setStoredInputMode("touch");
+      renderHarness({ layout: "QWERTY" });
+      fireEvent.focus(screen.getByLabelText("field"));
+
+      const root = screen.getByRole("group", { name: /on-screen keyboard/i });
+      const observer = FakeResizeObserver.instances.at(-1)!;
+      Object.defineProperty(root, "offsetHeight", { configurable: true, value: 241 });
+
+      act(() => {
+        observer.callback(
+          [
+            {
+              target: root,
+              contentRect: { height: 208 } as DOMRectReadOnly,
+              borderBoxSize: undefined,
+            } as unknown as ResizeObserverEntry,
+          ],
+          observer as unknown as ResizeObserver
+        );
+      });
+
+      expect(document.documentElement.style.getPropertyValue("--touch-keyboard-height")).toBe("241px");
+    });
   });
 
   it("respects maxLength end to end (e.g. a 6-character store code)", () => {
