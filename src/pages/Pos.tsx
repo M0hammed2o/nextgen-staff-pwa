@@ -15,6 +15,8 @@ import { useAuth } from "@/lib/auth";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
+import { useTouchField } from "@/hooks/useTouchField";
+import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 
 function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -376,6 +378,9 @@ export default function Pos() {
     }, 100);
   }
 
+  const searchTouch = useTouchField({ value: search, onChange: setSearch, layout: "QWERTY" });
+  const mobileCartKeyboardSpacer = useTouchKeyboardSpacerStyle();
+
   const cartCount = cart.reduce((sum, l) => sum + l.quantity, 0);
   const isLoading = loadingCategories || loadingItems;
 
@@ -404,7 +409,12 @@ export default function Pos() {
   );
 
   return (
-    <div className="min-h-screen bg-background pb-28 md:flex md:h-screen md:flex-col md:pb-0">
+    // md:h-[...] shrinks by the on-screen keyboard's height (0px when
+    // closed, via the --touch-keyboard-height CSS var TouchKeyboard.tsx
+    // sets) so the persistent desktop/tablet cart panel's checkout button
+    // and order total are pushed up above the keyboard instead of being
+    // covered by it, without any JS-driven layout branching here.
+    <div className="min-h-screen bg-background pb-28 md:flex md:h-[calc(100vh-var(--touch-keyboard-height,0px))] md:flex-col md:pb-0">
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top">
         <div className="flex items-center justify-between px-4 py-4">
           <div>
@@ -436,7 +446,8 @@ export default function Pos() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search menu…"
-            className="h-10 w-full rounded-full border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            className="h-11 w-full rounded-full border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            {...searchTouch.fieldProps}
           />
         </div>
 
@@ -445,7 +456,7 @@ export default function Pos() {
             <button
               onClick={() => setActiveCategory("ALL")}
               className={cn(
-                "flex-shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                "flex-shrink-0 rounded-full px-4 py-2.5 min-h-[44px] text-sm font-medium transition-colors",
                 activeCategory === "ALL" ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
               )}
             >
@@ -456,7 +467,7 @@ export default function Pos() {
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
                 className={cn(
-                  "flex-shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                  "flex-shrink-0 rounded-full px-4 py-2.5 min-h-[44px] text-sm font-medium transition-colors",
                   activeCategory === cat.id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
                 )}
               >
@@ -669,7 +680,7 @@ export default function Pos() {
           <DialogHeader className="p-4 pb-0">
             <DialogTitle className="sr-only">Current order</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[85vh] overflow-y-auto">{cartPanel}</div>
+          <div className="max-h-[85vh] overflow-y-auto" style={mobileCartKeyboardSpacer}>{cartPanel}</div>
         </DialogContent>
       </Dialog>
 

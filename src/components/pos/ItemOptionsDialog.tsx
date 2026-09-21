@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Minus, Plus } from "lucide-react";
 import type { MenuItemEntry, MenuOptionGroup } from "@/types";
 import { cn } from "@/lib/utils";
+import { useTouchField } from "@/hooks/useTouchField";
+import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 
 function formatCents(cents: number): string {
   const sign = cents < 0 ? "-" : "+";
@@ -44,6 +46,14 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
   const [addOnQty, setAddOnQty] = useState<Record<string, number>>({});
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState("");
+
+  const instructionsTouch = useTouchField({
+    value: specialInstructions,
+    onChange: setSpecialInstructions,
+    layout: "QWERTY",
+    maxLength: 500,
+  });
+  const keyboardSpacer = useTouchKeyboardSpacerStyle();
 
   // Reset local selection state every time a different item is opened.
   useEffect(() => {
@@ -97,7 +107,7 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
 
   return (
     <Dialog open={!!item} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-h-[85vh] overflow-y-auto" style={keyboardSpacer}>
         <DialogHeader>
           <DialogTitle>{item.name}</DialogTitle>
         </DialogHeader>
@@ -158,7 +168,7 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
                         <button
                           type="button"
                           onClick={() => setAddOnQty((prev) => ({ ...prev, [addOn.id]: Math.max(0, qty - 1) }))}
-                          className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
+                          className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
                           aria-label={`Remove ${addOn.name}`}
                         >
                           <Minus className="h-4 w-4" />
@@ -169,7 +179,7 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
                           onClick={() =>
                             setAddOnQty((prev) => ({ ...prev, [addOn.id]: Math.min(addOn.max_qty, qty + 1) }))
                           }
-                          className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
+                          className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
                           aria-label={`Add ${addOn.name}`}
                         >
                           <Plus className="h-4 w-4" />
@@ -223,6 +233,7 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
               rows={2}
               maxLength={500}
               className="w-full rounded-lg border border-border bg-secondary p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              {...instructionsTouch.fieldProps}
             />
           </div>
         </div>

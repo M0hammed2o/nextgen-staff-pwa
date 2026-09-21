@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api";
 import type { WhatsAppStatus } from "@/types";
+import InputModeToggle from "@/components/InputModeToggle";
 import logo from "@/assets/logo.jpeg";
 
 export default function Profile() {
@@ -79,6 +80,10 @@ export default function Profile() {
             <span className="text-muted-foreground">Business</span>
             <span className="font-medium text-foreground">{user?.business_name || "—"}</span>
           </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-4">
+          <InputModeToggle />
         </div>
 
         {status && (

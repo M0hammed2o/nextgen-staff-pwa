@@ -70,3 +70,22 @@
     padding-top: env(safe-area-inset-top, 0px);
   }
 }
+
+/* ── TouchKeyboard spacing ─────────────────────────────────────────────
+   Set by components/TouchKeyboard.tsx while it is open/closed. Used so the
+   on-screen keyboard never permanently covers the field being edited or,
+   on the POS desktop/tablet layout, the order total and Pay/Complete-sale
+   button — see that component's comments for the full reasoning. Ordinary
+   (window-scrolling) pages get a body padding so their bottom content
+   scrolls into view above the keyboard; components with their own nested
+   scroll region (Radix Dialog bodies) apply the same variable directly as
+   their own bottom padding instead (see e.g. PaymentDialog/CashupDialog/
+   ItemOptionsDialog/Pos.tsx's mobile cart dialog). */
+:root {
+  --touch-keyboard-height: 0px;
+}
+
+body.touch-keyboard-open {
+  padding-bottom: var(--touch-keyboard-height);
+  transition: padding-bottom 150ms ease-out;
+}

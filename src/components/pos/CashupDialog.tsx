@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { useTouchField } from "@/hooks/useTouchField";
+import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 
 interface Props {
   open: boolean;
@@ -29,6 +31,10 @@ export default function CashupDialog({ open, onClose }: Props) {
   const [countedCash, setCountedCash] = useState("");
   const [result, setResult] = useState<TillSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const openingFloatTouch = useTouchField({ value: openingFloat, onChange: setOpeningFloat, layout: "CURRENCY" });
+  const countedCashTouch = useTouchField({ value: countedCash, onChange: setCountedCash, layout: "CURRENCY" });
+  const keyboardSpacer = useTouchKeyboardSpacerStyle();
 
   const { data: current, isLoading } = useQuery({
     queryKey: ["till-current"],
@@ -86,7 +92,7 @@ export default function CashupDialog({ open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleDialogClose()}>
-      <DialogContent>
+      <DialogContent style={keyboardSpacer}>
         <DialogHeader>
           <DialogTitle>
             {result ? "Till closed" : current ? "Close the till" : "Open the till"}
@@ -143,11 +149,12 @@ export default function CashupDialog({ open, onClose }: Props) {
                 <Input
                   id="counted"
                   type="number"
-                  inputMode="decimal"
+                  inputMode={countedCashTouch.touchActive ? undefined : "decimal"}
                   value={countedCash}
                   onChange={(e) => setCountedCash(e.target.value)}
                   placeholder="0.00"
                   autoFocus
+                  {...countedCashTouch.fieldProps}
                 />
                 <p className="text-xs text-muted-foreground">
                   Count the drawer first. The expected figure is shown only after you
@@ -172,11 +179,12 @@ export default function CashupDialog({ open, onClose }: Props) {
               <Input
                 id="float"
                 type="number"
-                inputMode="decimal"
+                inputMode={openingFloatTouch.touchActive ? undefined : "decimal"}
                 value={openingFloat}
                 onChange={(e) => setOpeningFloat(e.target.value)}
                 placeholder="0.00"
                 autoFocus
+                {...openingFloatTouch.fieldProps}
               />
               <p className="text-xs text-muted-foreground">
                 The change float you start the shift with. Every cash-up variance is
@@ -189,19 +197,19 @@ export default function CashupDialog({ open, onClose }: Props) {
         {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
 
         <DialogFooter className="flex-row gap-2">
-          <Button variant="outline" onClick={handleDialogClose} className="flex-1">
+          <Button size="lg" variant="outline" onClick={handleDialogClose} className="flex-1">
             Done
           </Button>
           {!isLoading && !result && (
             current ? (
               canClose && (
-                <Button onClick={handleCloseSubmit} disabled={closeMutation.isPending} className="flex-1 gap-1.5">
+                <Button size="lg" onClick={handleCloseSubmit} disabled={closeMutation.isPending} className="flex-1 gap-1.5">
                   {closeMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                   Close till
                 </Button>
               )
             ) : (
-              <Button onClick={handleOpenSubmit} disabled={openMutation.isPending} className="flex-1 gap-1.5">
+              <Button size="lg" onClick={handleOpenSubmit} disabled={openMutation.isPending} className="flex-1 gap-1.5">
                 {openMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 Open till
               </Button>

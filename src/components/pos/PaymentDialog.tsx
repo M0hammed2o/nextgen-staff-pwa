@@ -3,6 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2 } from "lucide-react";
 import type { POSPaymentMethod, POSSettings } from "@/types";
 import { cn, formatCurrency } from "@/lib/utils";
+import { useTouchField } from "@/hooks/useTouchField";
+import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 
 /**
  * Intelligent quick-tender amounts: exact change, plus the next R50/R100/R200/
@@ -42,6 +44,10 @@ export default function PaymentDialog({
   const [cashInput, setCashInput] = useState("");
   const [reference, setReference] = useState("");
 
+  const cashTouch = useTouchField({ value: cashInput, onChange: setCashInput, layout: "CURRENCY" });
+  const referenceTouch = useTouchField({ value: reference, onChange: setReference, layout: "QWERTY", maxLength: 255 });
+  const keyboardSpacer = useTouchKeyboardSpacerStyle();
+
   useEffect(() => {
     if (open) {
       setStep("method");
@@ -63,7 +69,7 @@ export default function PaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-h-[85vh] overflow-y-auto" style={keyboardSpacer}>
         <DialogHeader>
           <DialogTitle>
             {step === "method" && "Select payment method"}
@@ -120,7 +126,7 @@ export default function PaymentDialog({
               <label className="text-xs font-medium text-muted-foreground">Cash received</label>
               <input
                 type="number"
-                inputMode="decimal"
+                inputMode={cashTouch.touchActive ? undefined : "decimal"}
                 step="0.01"
                 min="0"
                 autoFocus
@@ -128,6 +134,7 @@ export default function PaymentDialog({
                 onChange={(e) => setCashInput(e.target.value)}
                 placeholder="0.00"
                 className="flex h-14 w-full rounded-lg border border-border bg-secondary px-4 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                {...cashTouch.fieldProps}
               />
             </div>
 
@@ -201,6 +208,7 @@ export default function PaymentDialog({
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="Terminal / transaction reference"
                 className="flex h-12 w-full rounded-lg border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                {...referenceTouch.fieldProps}
               />
             </div>
 

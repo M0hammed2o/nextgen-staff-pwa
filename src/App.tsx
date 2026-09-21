@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
+import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import BottomNav from "@/components/BottomNav";
+import TouchKeyboard from "@/components/TouchKeyboard";
 import Login from "@/pages/Login";
 import Welcome from "@/pages/Welcome";
 import LiveOrders from "@/pages/LiveOrders";
@@ -29,6 +31,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <BrowserRouter>
+      <TouchKeyboardProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route
@@ -98,6 +101,8 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
         <BottomNav />
+        <TouchKeyboard />
+      </TouchKeyboardProvider>
       </BrowserRouter>
     </AuthProvider>
   </QueryClientProvider>

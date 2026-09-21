@@ -4,6 +4,8 @@ import { useAuth } from "@/lib/auth";
 import { fetchStaffDirectory } from "@/lib/api";
 import type { StaffDirectoryEntry } from "@/types";
 import PinKeypad from "@/components/PinKeypad";
+import InputModeToggle from "@/components/InputModeToggle";
+import { useTouchField } from "@/hooks/useTouchField";
 import logo from "@/assets/logo.jpeg";
 
 const PIN_LENGTH = 4;
@@ -13,6 +15,12 @@ export default function Login() {
   const navigate = useNavigate();
 
   const [businessCode, setBusinessCode] = useState("");
+  const businessCodeTouch = useTouchField({
+    value: businessCode,
+    onChange: (v) => setBusinessCode(v.toUpperCase()),
+    layout: "QWERTY",
+    maxLength: 6,
+  });
   const [staffList, setStaffList] = useState<StaffDirectoryEntry[]>([]);
   const [businessName, setBusinessName] = useState<string | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<StaffDirectoryEntry | null>(null);
@@ -150,6 +158,7 @@ export default function Login() {
                 autoCapitalize="characters"
                 maxLength={6}
                 className="flex h-14 w-full rounded-lg border border-border bg-secondary px-4 text-lg font-semibold tracking-widest text-foreground placeholder:text-muted-foreground placeholder:font-normal placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-primary"
+                {...businessCodeTouch.fieldProps}
               />
               <p className="text-xs text-muted-foreground">Provided by your manager</p>
             </div>
@@ -168,6 +177,12 @@ export default function Login() {
             >
               {loading ? "Checking..." : "Continue"}
             </button>
+
+            {/* Reachable here deliberately — this field comes before any
+                profile page exists to fix an unusable native keyboard from,
+                and Windows + Chrome often doesn't open one on a touchscreen
+                till with no physical keyboard attached. */}
+            <InputModeToggle compact />
           </div>
 
           <p className="text-center text-xs text-muted-foreground">

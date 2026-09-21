@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { usePOSSettings } from "@/lib/pos-settings";
+import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
 import type { POSSettings } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -95,9 +96,17 @@ const TABS: Tab[] = [
 export default function BottomNav() {
   const location = useLocation();
   const { data: settings = null } = usePOSSettings();
+  const { active: touchKeyboardActive } = useTouchKeyboardContext();
 
   // Hide on login and order detail
   if (location.pathname === "/login" || location.pathname.startsWith("/orders/")) {
+    return null;
+  }
+
+  // Hide while the on-screen keyboard is up — the two occupy the same
+  // screen real estate, and there is nothing useful to tap in the nav bar
+  // while a field is being typed into.
+  if (touchKeyboardActive) {
     return null;
   }
 

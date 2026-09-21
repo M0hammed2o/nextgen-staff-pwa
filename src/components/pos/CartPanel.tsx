@@ -2,6 +2,7 @@ import { Minus, Plus, Trash2 } from "lucide-react";
 import type { CartLine, POSSettings } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { useTouchField } from "@/hooks/useTouchField";
 
 export type OrderMode = "PICKUP" | "DELIVERY" | "DINE_IN";
 
@@ -59,6 +60,12 @@ export default function CartPanel({
   const tableNumberRequired = orderMode === "DINE_IN" && !!posSettings?.table_number_required;
   const canCheckout = lines.length > 0 && tillOpen && (!tableNumberRequired || tableNumber.trim().length > 0);
 
+  const tableNumberTouch = useTouchField({ value: tableNumber, onChange: onTableNumberChange, layout: "QWERTY", maxLength: 20 });
+  const customerNameTouch = useTouchField({ value: customerName, onChange: onCustomerNameChange, layout: "QWERTY", maxLength: 100 });
+  const customerPhoneTouch = useTouchField({ value: customerPhone, onChange: onCustomerPhoneChange, layout: "PHONE", maxLength: 20 });
+  const discountRandTouch = useTouchField({ value: discountRand, onChange: onDiscountRandChange, layout: "CURRENCY" });
+  const discountReasonTouch = useTouchField({ value: discountReason, onChange: onDiscountReasonChange, layout: "QWERTY", maxLength: 100 });
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -94,7 +101,7 @@ export default function CartPanel({
                   <button
                     type="button"
                     onClick={() => (line.quantity <= 1 ? onRemove(line.key) : onUpdateQty(line.key, line.quantity - 1))}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
+                    className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
                     aria-label="Decrease quantity"
                   >
                     <Minus className="h-4 w-4" />
@@ -103,7 +110,7 @@ export default function CartPanel({
                   <button
                     type="button"
                     onClick={() => onUpdateQty(line.key, line.quantity + 1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
+                    className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-foreground active:bg-muted"
                     aria-label="Increase quantity"
                   >
                     <Plus className="h-4 w-4" />
@@ -111,7 +118,7 @@ export default function CartPanel({
                   <button
                     type="button"
                     onClick={() => onRemove(line.key)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-destructive active:bg-destructive/10"
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-destructive active:bg-destructive/10"
                     aria-label="Remove item"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -153,7 +160,8 @@ export default function CartPanel({
                   value={tableNumber}
                   onChange={(e) => onTableNumberChange(e.target.value)}
                   placeholder="e.g. 12"
-                  className="flex h-10 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="flex h-11 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  {...tableNumberTouch.fieldProps}
                 />
               </div>
             )}
@@ -166,14 +174,16 @@ export default function CartPanel({
                   value={customerName}
                   onChange={(e) => onCustomerNameChange(e.target.value)}
                   placeholder="Name"
-                  className="flex h-10 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="flex h-11 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  {...customerNameTouch.fieldProps}
                 />
                 <input
                   value={customerPhone}
                   onChange={(e) => onCustomerPhoneChange(e.target.value)}
                   placeholder="Phone (for loyalty)"
-                  inputMode="tel"
-                  className="flex h-10 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  inputMode={customerPhoneTouch.touchActive ? undefined : "tel"}
+                  className="flex h-11 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  {...customerPhoneTouch.fieldProps}
                 />
               </div>
             </div>
@@ -184,19 +194,21 @@ export default function CartPanel({
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="number"
-                  inputMode="decimal"
+                  inputMode={discountRandTouch.touchActive ? undefined : "decimal"}
                   min="0"
                   step="0.01"
                   value={discountRand}
                   onChange={(e) => onDiscountRandChange(e.target.value)}
                   placeholder="R0.00"
-                  className="flex h-10 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="flex h-11 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  {...discountRandTouch.fieldProps}
                 />
                 <input
                   value={discountReason}
                   onChange={(e) => onDiscountReasonChange(e.target.value)}
                   placeholder="Reason"
-                  className="flex h-10 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="flex h-11 w-full rounded-lg border border-border bg-secondary px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  {...discountReasonTouch.fieldProps}
                 />
               </div>
               {discountCents > 0 && posSettings && discountCents > posSettings.max_staff_discount_cents && (

@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { usePOSSettings } from "@/lib/pos-settings";
-import type { StocktakeHistoryEntry, StocktakeSession } from "@/types";
+import type { StocktakeHistoryEntry, StocktakeLine, StocktakeSession } from "@/types";
 import { cn, formatCurrency } from "@/lib/utils";
 import { ClipboardCheck, History, Loader2 } from "lucide-react";
+import { useTouchField } from "@/hooks/useTouchField";
 
 /**
  * Staff stocktake — start a count, enter what is physically on the shelf,
@@ -24,6 +25,45 @@ import { ClipboardCheck, History, Loader2 } from "lucide-react";
 
 type Tab = "COUNT" | "HISTORY";
 
+/** One count-entry row, its own component so it can carry its own useTouchField() hook — required since the parent renders a variable-length, search-filtered list. */
+function StocktakeCountRow({
+  line,
+  value,
+  onChange,
+}: {
+  line: StocktakeLine;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const touch = useTouchField({ value, onChange, layout: "NUMERIC" });
+
+  function unitFor(unit: string, label: string | null): string {
+    if (unit === "GRAM") return "g";
+    if (unit === "MILLILITRE") return "ml";
+    return label || "units";
+  }
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{line.ingredient_name}</p>
+        <p className="text-xs text-muted-foreground">
+          Count in {unitFor(line.canonical_unit, line.unit_label)}
+        </p>
+      </div>
+      <input
+        type="number"
+        inputMode={touch.touchActive ? undefined : "decimal"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="—"
+        className="h-11 w-28 rounded-lg border border-border bg-secondary px-3 text-right text-sm tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+        {...touch.fieldProps}
+      />
+    </li>
+  );
+}
+
 export default function Stocktake() {
   const queryClient = useQueryClient();
   const { data: settings } = usePOSSettings();
@@ -32,6 +72,7 @@ export default function Stocktake() {
   const [tab, setTab] = useState<Tab>("COUNT");
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
+  const searchTouch = useTouchField({ value: search, onChange: setSearch, layout: "QWERTY" });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -112,12 +153,6 @@ export default function Stocktake() {
     () => Object.values(counts).filter((v) => v.trim() !== "").length,
     [counts]
   );
-
-  function unitFor(unit: string, label: string | null): string {
-    if (unit === "GRAM") return "g";
-    if (unit === "MILLILITRE") return "ml";
-    return label || "units";
-  }
 
   function handleSave() {
     const payload = Object.entries(counts)
@@ -207,30 +242,19 @@ export default function Stocktake() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search ingredients…"
-                className="mt-2 h-10 w-full rounded-full border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className="mt-2 h-11 w-full rounded-full border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                {...searchTouch.fieldProps}
               />
             </div>
 
             <ul className="divide-y divide-border">
               {lines.map((line) => (
-                <li key={line.ingredient_id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">{line.ingredient_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Count in {unitFor(line.canonical_unit, line.unit_label)}
-                    </p>
-                  </div>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    value={counts[line.ingredient_id] ?? ""}
-                    onChange={(e) =>
-                      setCounts((c) => ({ ...c, [line.ingredient_id]: e.target.value }))
-                    }
-                    placeholder="—"
-                    className="h-11 w-28 rounded-lg border border-border bg-secondary px-3 text-right text-sm tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </li>
+                <StocktakeCountRow
+                  key={line.ingredient_id}
+                  line={line}
+                  value={counts[line.ingredient_id] ?? ""}
+                  onChange={(v) => setCounts((c) => ({ ...c, [line.ingredient_id]: v }))}
+                />
               ))}
               {lines.length === 0 && (
                 <li className="px-4 py-8 text-center text-sm text-muted-foreground">

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import type { IngredientSummary, POSSettings, WastageReasonOption } from "@/types";
 import { cn } from "@/lib/utils";
+import { useTouchField } from "@/hooks/useTouchField";
 
 /**
  * Quick wastage capture.
@@ -22,6 +23,10 @@ export default function Wastage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+
+  const searchTouch = useTouchField({ value: search, onChange: setSearch, layout: "QWERTY" });
+  const quantityTouch = useTouchField({ value: quantity, onChange: setQuantity, layout: "NUMERIC" });
+  const noteTouch = useTouchField({ value: note, onChange: setNote, layout: "QWERTY", maxLength: 500 });
 
   const { data: settings } = useQuery<POSSettings>({
     queryKey: ["pos-settings"],
@@ -137,6 +142,7 @@ export default function Wastage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search ingredients…"
             className="mt-4 h-12 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+            {...searchTouch.fieldProps}
           />
           {isLoading ? (
             <p className="mt-6 text-center text-sm text-muted-foreground">Loading…</p>
@@ -224,9 +230,10 @@ export default function Wastage() {
             <input
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              inputMode="decimal"
+              inputMode={quantityTouch.touchActive ? undefined : "decimal"}
               placeholder={`Or type an amount in ${unitLabel}`}
               className="mt-2 h-12 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+              {...quantityTouch.fieldProps}
             />
           </div>
 
@@ -236,6 +243,7 @@ export default function Wastage() {
               onChange={(e) => setNote(e.target.value)}
               placeholder="Say what happened (required)"
               className="h-12 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+              {...noteTouch.fieldProps}
             />
           )}
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Order, OrderStatus, StatusUpdateRequest } from "@/types";
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useTouchField } from "@/hooks/useTouchField";
 
 type CashPaymentMethod = "CASH" | "CARD";
 
@@ -63,6 +64,9 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
   const [cancelReason, setCancelReason] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState("");
   const [error, setError] = useState("");
+
+  const cancelReasonTouch = useTouchField({ value: cancelReason, onChange: setCancelReason, layout: "QWERTY", maxLength: 500 });
+  const estimatedMinutesTouch = useTouchField({ value: estimatedMinutes, onChange: setEstimatedMinutes, layout: "NUMERIC" });
 
   // Payment prompt state — shown after COLLECTED or DELIVERED (cash/card)
   const [showPayment, setShowPayment] = useState(false);
@@ -301,6 +305,7 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
           placeholder="Enter reason..."
           rows={3}
           className="w-full rounded-lg border border-border bg-secondary p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          {...cancelReasonTouch.fieldProps}
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex gap-3">
@@ -331,11 +336,12 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
           </label>
           <input
             type="number"
-            inputMode="numeric"
+            inputMode={estimatedMinutesTouch.touchActive ? undefined : "numeric"}
             value={estimatedMinutes}
             onChange={(e) => setEstimatedMinutes(e.target.value)}
             placeholder="e.g. 15"
             className="flex h-12 w-full rounded-lg border border-border bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            {...estimatedMinutesTouch.fieldProps}
           />
         </div>
       )}
