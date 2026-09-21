@@ -7,7 +7,6 @@ import { Minus, Plus } from "lucide-react";
 import type { MenuItemEntry, MenuOptionGroup } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
-import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 
 function formatCents(cents: number): string {
   const sign = cents < 0 ? "-" : "+";
@@ -53,7 +52,6 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
     layout: "QWERTY",
     maxLength: 500,
   });
-  const keyboardSpacer = useTouchKeyboardSpacerStyle();
 
   // Reset local selection state every time a different item is opened.
   useEffect(() => {
@@ -107,7 +105,12 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
 
   return (
     <Dialog open={!!item} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto" style={keyboardSpacer}>
+      {/* dialog.tsx's DialogContent already stays fully above the on-screen
+          keyboard on its own (re-centers + caps height + scrolls
+          internally) — see the comment there. The footer below is
+          additionally pinned with `sticky bottom-0` so "Add to order" is
+          never scrolled out of reach behind a long option list. */}
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{item.name}</DialogTitle>
         </DialogHeader>
@@ -238,7 +241,7 @@ export default function ItemOptionsDialog({ item, onClose, onAdd }: Props) {
           </div>
         </div>
 
-        <DialogFooter className="flex-row gap-2">
+        <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 flex-row gap-2 border-t border-border bg-background px-6 py-4">
           <Button variant="outline" onClick={onClose} className="flex-1">
             Cancel
           </Button>

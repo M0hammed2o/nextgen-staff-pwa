@@ -4,7 +4,6 @@ import { Loader2 } from "lucide-react";
 import type { POSPaymentMethod, POSSettings } from "@/types";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
-import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 
 /**
  * Intelligent quick-tender amounts: exact change, plus the next R50/R100/R200/
@@ -46,7 +45,6 @@ export default function PaymentDialog({
 
   const cashTouch = useTouchField({ value: cashInput, onChange: setCashInput, layout: "CURRENCY" });
   const referenceTouch = useTouchField({ value: reference, onChange: setReference, layout: "QWERTY", maxLength: 255 });
-  const keyboardSpacer = useTouchKeyboardSpacerStyle();
 
   useEffect(() => {
     if (open) {
@@ -69,7 +67,13 @@ export default function PaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto" style={keyboardSpacer}>
+      {/* No max-h/overflow/keyboard-spacer override here — components/ui/dialog.tsx's
+          DialogContent already keeps every dialog fully above the on-screen
+          keyboard (re-centers within the safe area, caps its own height,
+          scrolls internally). The action-button rows below are additionally
+          pinned with `sticky bottom-0` so "Complete sale" never requires
+          scrolling to reach even on a very tall payment form. */}
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {step === "method" && "Select payment method"}
@@ -173,7 +177,12 @@ export default function PaymentDialog({
 
             {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
 
-            <div className="flex gap-2">
+            {/* sticky + bg-background: stays visible at the bottom of the
+                dialog's own scroll area even if the form above it (or the
+                on-screen keyboard reserving space) pushes it out of the
+                immediately-visible viewport — never requires scrolling to
+                find "Complete sale". */}
+            <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-2 border-t border-border bg-background px-6 py-4">
               <button
                 type="button"
                 onClick={() => setStep("method")}
@@ -214,7 +223,7 @@ export default function PaymentDialog({
 
             {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
 
-            <div className="flex gap-2">
+            <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-2 border-t border-border bg-background px-6 py-4">
               <button
                 type="button"
                 onClick={() => setStep("method")}

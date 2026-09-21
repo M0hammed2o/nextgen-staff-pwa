@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Delete, ChevronUp } from "lucide-react";
 import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
 import { applyKeyToValue } from "@/lib/touch-keyboard-logic";
 import { cn } from "@/lib/utils";
 
-// Kept as one constant rather than measured per-layout — simpler, and every
-// layout's panel is close enough in height (4 rows of comfortably-sized
-// keys) that a single reserved height is a good enough approximation for
-// "don't cover the field/total/Pay button", without needing a
-// ResizeObserver for a fixed, non-resizing panel.
-const KEYBOARD_HEIGHT_PX = 300;
+// Used only for the very first paint of a given keyboard session, before a
+// ResizeObserver has had a chance to report the real, rendered height (the
+// QWERTY layout's 3 rows + space bar is visibly taller than the numeric
+// layout's 4 rows, and the previous single fixed constant under-estimated
+// both — the bottom key row was clipped). The real height, which is what
+// every consumer of --touch-keyboard-height (dialog.tsx, BottomNav, page
+// layouts) actually gets, is measured live below.
+const FALLBACK_KEYBOARD_HEIGHT_PX = 300;
 
 const NUMERIC_ROWS = [
   ["1", "2", "3"],
@@ -83,6 +85,27 @@ export default function TouchKeyboard() {
   const { active, close } = useTouchKeyboardContext();
   const [qwertyMode, setQwertyMode] = useState<"letters" | "symbols">("letters");
   const [caps, setCaps] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [measuredHeight, setMeasuredHeight] = useState(FALLBACK_KEYBOARD_HEIGHT_PX);
+
+  // Measure the REAL rendered height (previously a single hardcoded
+  // KEYBOARD_HEIGHT_PX=300 constant under-estimated it — the numeric
+  // layout's bottom row, '.', '0' and backspace, was clipped to 31 of 56px
+  // visible). The panel's own height is intrinsic (no inline height is set
+  // below), so this purely reads it; it never feeds back into its own size.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!active || !el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h) setMeasuredHeight(Math.ceil(h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+    // Re-attach whenever a field newly takes over the keyboard (a fresh
+    // mount): the ref itself doesn't change identity, but this guarantees a
+    // synchronous first measurement rather than waiting on stale state.
+  }, [Boolean(active)]);
 
   // A dialog open elsewhere in the app must not close itself just because a
   // tap landed on this keyboard (see the matching onPointerDownOutside
@@ -94,7 +117,7 @@ export default function TouchKeyboard() {
   useEffect(() => {
     const root = document.documentElement;
     if (active) {
-      root.style.setProperty("--touch-keyboard-height", `${KEYBOARD_HEIGHT_PX}px`);
+      root.style.setProperty("--touch-keyboard-height", `${measuredHeight}px`);
       document.body.classList.add("touch-keyboard-open");
     } else {
       root.style.setProperty("--touch-keyboard-height", "0px");
@@ -104,12 +127,13 @@ export default function TouchKeyboard() {
       root.style.setProperty("--touch-keyboard-height", "0px");
       document.body.classList.remove("touch-keyboard-open");
     };
-  }, [active]);
+  }, [active, measuredHeight]);
 
   // Reset transient QWERTY state whenever a different field takes over.
   useEffect(() => {
     setQwertyMode("letters");
     setCaps(false);
+    setMeasuredHeight(FALLBACK_KEYBOARD_HEIGHT_PX);
   }, [active?.id]);
 
   if (!active) return null;
@@ -206,13 +230,31 @@ export default function TouchKeyboard() {
   return (
     <div
       data-touch-keyboard-root=""
-      className="fixed inset-x-0 bottom-0 z-[90] border-t border-border bg-card px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.15)]"
-      style={{ height: KEYBOARD_HEIGHT_PX }}
+      // pointer-events-auto is load-bearing, not decorative: any open Radix
+      // Dialog sets `body.block-interactivity-*` (react-remove-scroll, see
+      // node_modules/react-remove-scroll/.../SideEffect.js) to
+      // `pointer-events: none`, and only the dialog's own Overlay/Content
+      // are added to the `allow-interactivity-*` "shards" allow-list. This
+      // keyboard is mounted at the app root, outside every dialog's portal,
+      // so without this explicit override every tap on it is excluded from
+      // hit-testing and falls through to whatever DOM node is underneath —
+      // which is exactly how a tap on a key could reach a hidden button
+      // behind the keyboard (e.g. "Complete sale"). Dialog.tsx's
+      // onPointerDownOutside/onInteractOutside guard (isTouchKeyboardTarget)
+      // only works once taps actually land on this element, which requires
+      // this override. Radix also aria-hides this element while a modal is
+      // open (`hideOthers` from the `aria-hidden` package, dialog.tsx ~L17),
+      // which is a real but lower-severity screen-reader-only gap — it does
+      // not affect pointer/click hit-testing (verified: Radix calls
+      // `hideOthers`, not `suppressOthers`/`inertOthers`, so it never sets
+      // the `inert` attribute, only `aria-hidden`).
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[90] border-t border-border bg-card px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.15)]"
+      ref={rootRef}
       role="group"
       aria-label="On-screen keyboard"
     >
-      <div className="flex h-full flex-col justify-between">
-        <div className="flex-1 overflow-hidden">
+      <div className="flex flex-col">
+        <div>
           {active.layout === "NUMERIC" && renderNumericLike(NUMERIC_ROWS)}
           {active.layout === "CURRENCY" && renderNumericLike(NUMERIC_ROWS)}
           {active.layout === "PHONE" && renderNumericLike(PHONE_ROWS)}

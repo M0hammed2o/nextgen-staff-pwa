@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
-import { useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
+import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
 
 interface Props {
   open: boolean;
@@ -34,7 +34,7 @@ export default function CashupDialog({ open, onClose }: Props) {
 
   const openingFloatTouch = useTouchField({ value: openingFloat, onChange: setOpeningFloat, layout: "CURRENCY" });
   const countedCashTouch = useTouchField({ value: countedCash, onChange: setCountedCash, layout: "CURRENCY" });
-  const keyboardSpacer = useTouchKeyboardSpacerStyle();
+  const { close: closeTouchKeyboard } = useTouchKeyboardContext();
 
   const { data: current, isLoading } = useQuery({
     queryKey: ["till-current"],
@@ -48,6 +48,12 @@ export default function CashupDialog({ open, onClose }: Props) {
       queryClient.invalidateQueries({ queryKey: ["till-current"] });
       setOpeningFloat("");
       setError(null);
+      // The float field doesn't necessarily unmount here (the dialog stays
+      // open showing the now-empty form until the till-current refetch
+      // resolves and swaps to the close-till view) — close explicitly
+      // rather than relying only on unmount, or the keyboard is left open
+      // over a form the cashier is done with.
+      closeTouchKeyboard();
     },
     onError: (err) => setError((err as { message?: string })?.message ?? "Could not open the till"),
   });
@@ -60,6 +66,7 @@ export default function CashupDialog({ open, onClose }: Props) {
       setCountedCash("");
       setError(null);
       setResult(closed);
+      closeTouchKeyboard();
     },
     onError: (err) => setError((err as { message?: string })?.message ?? "Could not close the till"),
   });
@@ -87,12 +94,13 @@ export default function CashupDialog({ open, onClose }: Props) {
   function handleDialogClose() {
     setResult(null);
     setError(null);
+    closeTouchKeyboard();
     onClose();
   }
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleDialogClose()}>
-      <DialogContent style={keyboardSpacer}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {result ? "Till closed" : current ? "Close the till" : "Open the till"}
@@ -196,7 +204,7 @@ export default function CashupDialog({ open, onClose }: Props) {
 
         {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
 
-        <DialogFooter className="flex-row gap-2">
+        <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 flex-row gap-2 border-t border-border bg-background px-6 py-4">
           <Button size="lg" variant="outline" onClick={handleDialogClose} className="flex-1">
             Done
           </Button>
