@@ -75,7 +75,10 @@ function StocktakeCountRow({
                   type="button"
                   onClick={() => onChangeUnit(opt.value)}
                   className={cn(
-                    "flex h-9 min-w-[44px] items-center justify-center rounded-md px-3 text-xs font-semibold",
+                    // Touch target: h-11 (44px) matches every other tappable
+                    // control on this touch-first screen (see the quantity
+                    // input beside it, and the Save/Submit buttons below).
+                    "flex h-11 min-w-[44px] items-center justify-center rounded-md px-3 text-sm font-semibold",
                     entry.unit === opt.value
                       ? "bg-primary text-primary-foreground"
                       : "bg-secondary text-foreground active:bg-muted"
