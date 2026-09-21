@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
+import type { ApiFetchError } from "@/lib/api";
 import type {
   CartLine, MenuCategoryEntry, MenuItemEntry, Order, POSOrderCreateRequest, POSPaymentMethod, POSSettings, TillSession,
 } from "@/types";
@@ -11,8 +12,9 @@ import CashupDialog from "@/components/pos/CashupDialog";
 import CustomerReceipt, { printCustomerReceipt } from "@/components/CustomerReceipt";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
-import { ShoppingBag, Printer, Wallet, PartyPopper } from "lucide-react";
+import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
+import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 
 function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -42,6 +44,18 @@ export default function Pos() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [printFailed, setPrintFailed] = useState(false);
 
+  // ── Draft persistence + checkout submission state machine ───────────────
+  // See src/lib/pos-draft.ts for the full design rationale. Short version:
+  // "idle" = cart is freely editable; "in_flight" = a checkout request was
+  // sent and its outcome is unknown (reload/timeout/tab-close mid-request) —
+  // the cart is frozen and the only allowed action is re-sending the exact
+  // same payload under the exact same idempotency key.
+  const [submissionState, setSubmissionState] = useState<PosDraftSubmission>({ status: "idle" });
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [recoverySubmitting, setRecoverySubmitting] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const didRestoreDraftRef = useRef(false);
+
   const { data: categories = [], isLoading: loadingCategories } = useQuery({
     queryKey: ["pos-categories"],
     queryFn: () => apiClient.get<MenuCategoryEntry[]>("/v1/business/menu/categories"),
@@ -62,6 +76,64 @@ export default function Pos() {
     queryKey: ["pos-settings"],
     queryFn: () => apiClient.get<POSSettings>("/v1/business/pos/settings"),
   });
+
+  // Restore a persisted draft exactly once, after the menu has loaded (so we
+  // can re-validate cart lines against it). Deliberately per-user (see
+  // pos-draft.ts) — a different cashier logging into the same terminal never
+  // silently inherits this draft, since loadPosDraft is keyed on user.id too.
+  useEffect(() => {
+    if (didRestoreDraftRef.current) return;
+    if (loadingItems || loadingCategories) return;
+    if (!user?.business_id || !user?.id) return;
+    didRestoreDraftRef.current = true;
+
+    const draft = loadPosDraft(user.business_id, user.id);
+    if (!draft) return;
+
+    const activeItemIds = new Set(items.filter((i) => i.is_active).map((i) => i.id));
+    const validLines = draft.cart.filter((line) => activeItemIds.has(line.menuItemId));
+    const droppedCount = draft.cart.length - validLines.length;
+
+    setCart(validLines);
+    setOrderMode(draft.orderMode);
+    setTableNumber(draft.tableNumber);
+    setCustomerName(draft.customerName);
+    setCustomerPhone(draft.customerPhone);
+    setDiscountRand(draft.discountRand);
+    setDiscountReason(draft.discountReason);
+    setIdempotencyKey(draft.idempotencyKey);
+    setSubmissionState(draft.submission);
+
+    if (validLines.length > 0 || draft.submission.status === "in_flight") {
+      setDraftNotice(
+        droppedCount > 0
+          ? `Your unfinished order was restored — ${droppedCount} item${droppedCount === 1 ? "" : "s"} removed (no longer on the menu).`
+          : "Your unfinished order was restored."
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingItems, loadingCategories, items, user?.business_id, user?.id]);
+
+  // Persist the draft on every relevant change, after restoration has run
+  // (never save before restoring, or we'd immediately overwrite the very
+  // draft we're about to read). An empty, idle cart has nothing worth
+  // persisting, so it clears the draft instead of writing an empty one.
+  useEffect(() => {
+    if (!didRestoreDraftRef.current) return;
+    if (!user?.business_id || !user?.id) return;
+    if (cart.length === 0 && submissionState.status === "idle") {
+      clearPosDraft(user.business_id, user.id);
+      return;
+    }
+    savePosDraft(user.business_id, user.id, {
+      cart, orderMode, tableNumber, customerName, customerPhone,
+      discountRand, discountReason, idempotencyKey, submission: submissionState,
+    });
+  }, [
+    cart, orderMode, tableNumber, customerName, customerPhone,
+    discountRand, discountReason, idempotencyKey, submissionState,
+    user?.business_id, user?.id,
+  ]);
 
   const visibleItems = useMemo(() => {
     let active = items.filter((i) => i.is_active);
@@ -159,12 +231,50 @@ export default function Pos() {
     setDiscountReason("");
     setIdempotencyKey(newIdempotencyKey());
     setErrorMessage(null);
+    setSubmissionState({ status: "idle" });
+    setDraftNotice(null);
+    setRecoveryError(null);
+    if (user?.business_id && user?.id) clearPosDraft(user.business_id, user.id);
   }
 
   const subtotalCents = cart.reduce((sum, l) => sum + lineTotalCents(l), 0);
   const discountCents = Math.round((parseFloat(discountRand || "0") || 0) * 100);
   const deliveryFeeCents = orderMode === "DELIVERY" ? (posSettings?.delivery_fee_cents ?? 0) : 0;
   const estimatedTotalCents = Math.max(0, subtotalCents - discountCents) + deliveryFeeCents;
+
+  // Shared by both a normal checkout success and the recovery flow (a
+  // same-key resend after an "outcome unknown" submission) — one place that
+  // decides what "the sale is definitely done" means, so the two call sites
+  // can never drift apart on print/reset behaviour.
+  function finishSuccessfulSale(order: Order) {
+    setPaymentOpen(false);
+    setMobileCartOpen(false);
+    setLastOrder(order);
+    resetForNextSale();
+    queryClient.invalidateQueries({ queryKey: ["live-orders"] });
+
+    // Print AFTER the sale is safely saved, and never inside the try that
+    // guards the sale itself. Payment and printing are separate concerns:
+    // an offline printer must not make a paid order look like it failed,
+    // or the cashier will ring it up a second time.
+    if (posSettings?.receipt_auto_print !== false) {
+      try {
+        setShowReceipt(true);
+        // One frame for the hidden receipt to mount before window.print().
+        setTimeout(() => {
+          try {
+            printCustomerReceipt();
+          } catch {
+            setPrintFailed(true);
+          } finally {
+            setShowReceipt(false);
+          }
+        }, 100);
+      } catch {
+        setPrintFailed(true);
+      }
+    }
+  }
 
   async function handleConfirmPayment(payload: {
     payment_method: POSPaymentMethod;
@@ -173,60 +283,82 @@ export default function Pos() {
   }) {
     setIsSubmitting(true);
     setErrorMessage(null);
+    const body: POSOrderCreateRequest = {
+      order_mode: orderMode,
+      table_number: orderMode === "DINE_IN" ? (tableNumber.trim() || null) : null,
+      customer_name: customerName.trim() || null,
+      customer_phone: customerPhone.trim() || null,
+      discount_cents: discountCents > 0 ? discountCents : undefined,
+      discount_reason: discountCents > 0 ? (discountReason.trim() || null) : null,
+      items: cart.map((line) => ({
+        menu_item_id: line.menuItemId,
+        quantity: line.quantity,
+        selected_option_ids: line.selectedOptionIds,
+        add_on_selections: line.addOnSelections.map((a) => ({ add_on_id: a.addOnId, quantity: a.quantity })),
+        removed_ingredient_ids: line.removedIngredientIds,
+        special_instructions: line.specialInstructions,
+      })),
+      payment_method: payload.payment_method,
+      cash_tendered_cents: payload.cash_tendered_cents,
+      payment_reference: payload.payment_reference,
+      idempotency_key: idempotencyKey,
+    };
+    // Freeze this exact payload + key as "in flight" BEFORE sending. If the
+    // response never comes back (timeout, reload, tab close) this is what
+    // lets a later reload recover safely — resending the SAME payload under
+    // the SAME key, never a fresh one, since the backend returns the
+    // original order for a repeated key.
+    setSubmissionState({ status: "in_flight", payload: body, idempotencyKey, startedAt: Date.now() });
     try {
-      const body: POSOrderCreateRequest = {
-        order_mode: orderMode,
-        table_number: orderMode === "DINE_IN" ? (tableNumber.trim() || null) : null,
-        customer_name: customerName.trim() || null,
-        customer_phone: customerPhone.trim() || null,
-        discount_cents: discountCents > 0 ? discountCents : undefined,
-        discount_reason: discountCents > 0 ? (discountReason.trim() || null) : null,
-        items: cart.map((line) => ({
-          menu_item_id: line.menuItemId,
-          quantity: line.quantity,
-          selected_option_ids: line.selectedOptionIds,
-          add_on_selections: line.addOnSelections.map((a) => ({ add_on_id: a.addOnId, quantity: a.quantity })),
-          removed_ingredient_ids: line.removedIngredientIds,
-          special_instructions: line.specialInstructions,
-        })),
-        payment_method: payload.payment_method,
-        cash_tendered_cents: payload.cash_tendered_cents,
-        payment_reference: payload.payment_reference,
-        idempotency_key: idempotencyKey,
-      };
       const order = await apiClient.post<Order>("/v1/business/pos/orders", body);
-      setPaymentOpen(false);
-      setMobileCartOpen(false);
-      setLastOrder(order);
-      resetForNextSale();
-      queryClient.invalidateQueries({ queryKey: ["live-orders"] });
-
-      // Print AFTER the sale is safely saved, and never inside the try that
-      // guards the sale itself. Payment and printing are separate concerns:
-      // an offline printer must not make a paid order look like it failed,
-      // or the cashier will ring it up a second time.
-      if (posSettings?.receipt_auto_print !== false) {
-        try {
-          setShowReceipt(true);
-          // One frame for the hidden receipt to mount before window.print().
-          setTimeout(() => {
-            try {
-              printCustomerReceipt();
-            } catch {
-              setPrintFailed(true);
-            } finally {
-              setShowReceipt(false);
-            }
-          }, 100);
-        } catch {
-          setPrintFailed(true);
-        }
-      }
+      finishSuccessfulSale(order);
     } catch (err) {
-      const message = (err as { message?: string })?.message ?? "Could not complete the sale — try again";
-      setErrorMessage(message);
+      const apiErr = err as ApiFetchError;
+      if (apiErr?.noResponse) {
+        // Outcome unknown — do NOT clear the in-flight state (it's already
+        // persisted). Close the payment dialog and let the blocking recovery
+        // card (rendered below, driven by submissionState) take over instead
+        // of showing a normal "failed" error — we do not yet know that.
+        setPaymentOpen(false);
+      } else {
+        // A real HTTP response came back rejecting the order (validation,
+        // till closed, etc.) — the backend's idempotency check runs before
+        // any of that, so no order exists under this key. Safe to go back to
+        // idle and let the cashier fix the cart and retry with the same key.
+        setSubmissionState({ status: "idle" });
+        setErrorMessage(apiErr?.message ?? "Could not complete the sale — try again");
+      }
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  // Recovery: resend the EXACT payload/key an unknown-outcome submission was
+  // sent with. Manual, single-shot per click — never an automatic retry
+  // loop. Safe regardless of what actually happened last time: the backend
+  // returns the original order if it was created, or creates it now for the
+  // first time if it wasn't — never a duplicate.
+  async function handleRecoverySubmit() {
+    if (submissionState.status !== "in_flight") return;
+    setRecoverySubmitting(true);
+    setRecoveryError(null);
+    try {
+      const order = await apiClient.post<Order>("/v1/business/pos/orders", submissionState.payload);
+      finishSuccessfulSale(order);
+    } catch (err) {
+      const apiErr = err as ApiFetchError;
+      if (apiErr?.noResponse) {
+        // Still don't know — stay in_flight, let the cashier try again.
+        setRecoveryError("Still couldn't reach the server. Check the connection and try again.");
+      } else {
+        // A definite rejection this time proves no order exists under this
+        // key (the idempotency check runs first, before this rejection could
+        // have happened) — safe to unfreeze the cart.
+        setSubmissionState({ status: "idle" });
+        setRecoveryError(apiErr?.message ?? "That sale could not be completed. Check the details and try again.");
+      }
+    } finally {
+      setRecoverySubmitting(false);
     }
   }
 
@@ -335,6 +467,24 @@ export default function Pos() {
         )}
       </header>
 
+      {/* Told inline, not silently — a cashier who reopens the till after a
+          reload/relogin needs to know this cart isn't the one they left with
+          moments ago, since it was restored from local storage rather than
+          freshly built. Dismissable: it's informational, not a blocker. */}
+      {draftNotice && submissionState.status !== "in_flight" && (
+        <div className="px-4 pt-4">
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
+            <p className="text-sm text-foreground">{draftNotice}</p>
+            <button
+              onClick={() => setDraftNotice(null)}
+              className="flex-shrink-0 text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* The till being closed is the single most common reason a sale cannot
           be rung up, and the header button alone was too easy to miss on a
           busy screen. This states the blocker in plain words and carries the
@@ -402,6 +552,48 @@ export default function Pos() {
           {cartPanel}
         </div>
       </div>
+
+      {/* Blocking recovery overlay — shown whenever a checkout request's
+          outcome is unknown (timeout, reload/relogin mid-request, tab
+          closed). The cart is frozen: the only way out is checking with the
+          server, using the exact same order and idempotency key that was
+          already sent, never a fresh one. See handleRecoverySubmit(). */}
+      {submissionState.status === "in_flight" && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+              <h2 className="text-lg font-bold text-foreground">Checking your last sale…</h2>
+              <p className="text-sm text-muted-foreground">
+                The last checkout didn't get a clear response from the server — it may
+                have gone through, or it may not have. We'll check using the exact same
+                order, so it's safe to press this even if it already succeeded.
+              </p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {cartCount} item{cartCount !== 1 ? "s" : ""} · {formatCurrency(estimatedTotalCents)}
+              </p>
+            </div>
+            {recoveryError && (
+              <p className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">
+                {recoveryError}
+              </p>
+            )}
+            <button
+              onClick={handleRecoverySubmit}
+              disabled={recoverySubmitting}
+              className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-primary text-sm font-semibold text-primary-foreground active:opacity-90 disabled:opacity-60"
+            >
+              {recoverySubmitting ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" /> Check now
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Success overlay after a completed sale */}
       {lastOrder && (

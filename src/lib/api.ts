@@ -2,19 +2,48 @@ import { getStoredTokens, storeTokens, clearTokens } from "./token-storage";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.nextgenintelligence.co.za";
 
+// Default request timeout. Chosen to comfortably cover a slow mobile-data
+// connection or a cold backend instance without leaving a cashier staring at
+// a frozen "Complete sale" button for a minute+. Callers that need something
+// different (a long-poll, an upload) can override per-call via `timeoutMs`.
+const DEFAULT_TIMEOUT_MS = 18000;
+
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
+
+/**
+ * Thrown/attached when fetch() itself never produced an HTTP response —
+ * timeout (AbortController) or a network-level failure (offline, DNS,
+ * connection reset). In both cases we genuinely do not know whether the
+ * server received and processed the request, which matters a great deal for
+ * a checkout POST (see Pos.tsx's "outcome unknown" recovery flow) — a
+ * `noResponse` error must NEVER be treated the same as a definite rejection
+ * (an HTTP 4xx/5xx, which means the server DID respond).
+ */
+export interface ApiFetchError {
+  message: string;
+  status: number;
+  noResponse?: boolean;
+}
 
 async function refreshAccessToken(): Promise<boolean> {
   const tokens = getStoredTokens();
   if (!tokens?.refresh_token) return false;
 
   try {
-    const res = await fetch(`${BASE_URL}/v1/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: tokens.refresh_token }),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`${BASE_URL}/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) return false;
     const data = await res.json();
     // Backend /v1/auth/refresh returns flat TokenPair
@@ -33,21 +62,61 @@ async function refreshAccessToken(): Promise<boolean> {
   }
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  /** Per-call override. Pass `null` to disable the timeout entirely (SSE never uses apiFetch, so this is only for the rare long-running request). */
+  timeoutMs?: number | null;
+}
+
+/**
+ * fetch() wrapped with an AbortController-based timeout. Distinguishes a
+ * "no HTTP response at all" failure (timeout, offline, connection reset —
+ * flagged `noResponse: true`) from a normal fetch that DID get a response
+ * (even a 4xx/5xx) — callers that care about "did this mutation definitely
+ * not happen" (checkout) rely on that distinction.
+ */
+async function timedFetch(url: string, init: RequestInit, timeoutMs: number | null | undefined): Promise<Response> {
+  const effectiveTimeout = timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : timeoutMs;
+  if (effectiveTimeout == null) {
+    return fetch(url, init);
+  }
+  const controller = new AbortController();
+  // If the caller already passed a signal we can't easily compose them
+  // without a helper (AbortSignal.any isn't available in every supported
+  // browser yet) — none of this app's call sites pass their own signal
+  // today, so we simply own the signal here.
+  const timer = setTimeout(() => controller.abort(), effectiveTimeout);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      const timeoutError: ApiFetchError = { message: "The request timed out — the connection may be slow or down", status: 0, noResponse: true };
+      throw timeoutError;
+    }
+    // Any other fetch-level rejection (offline, DNS, connection reset) also
+    // never produced an HTTP response.
+    const networkError: ApiFetchError = { message: "Could not reach the server — check your connection", status: 0, noResponse: true };
+    throw networkError;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {}
 ): Promise<T> {
+  const { timeoutMs, ...requestInit } = options;
   const tokens = getStoredTokens();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
+    ...(requestInit.headers as Record<string, string>),
   };
 
   if (tokens?.access_token) {
     headers["Authorization"] = `Bearer ${tokens.access_token}`;
   }
 
-  let res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  let res = await timedFetch(`${BASE_URL}${path}`, { ...requestInit, headers }, timeoutMs);
 
   if (res.status === 401 && tokens?.refresh_token) {
     if (!isRefreshing) {
@@ -63,7 +132,7 @@ export async function apiFetch<T>(
       if (newTokens) {
         headers["Authorization"] = `Bearer ${newTokens.access_token}`;
       }
-      res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+      res = await timedFetch(`${BASE_URL}${path}`, { ...requestInit, headers }, timeoutMs);
     } else {
       clearTokens();
       window.location.href = "/login";
@@ -82,7 +151,9 @@ export async function apiFetch<T>(
       // Response body is not JSON (e.g. empty 500 from a proxy). Log for Sentry.
       console.error(`API ${res.status}: non-JSON error body`, parseError);
     }
-    throw { message, status: res.status };
+    // A response WAS received here (even if not `ok`) — this is a definite
+    // rejection, never `noResponse`.
+    throw { message, status: res.status } as ApiFetchError;
   }
 
   if (res.status === 204) return {} as T;
@@ -227,20 +298,23 @@ export async function fetchStaffDirectory(
 }
 
 export const apiClient = {
-  get: <T>(path: string) => apiFetch<T>(path),
-  post: <T>(path: string, body?: unknown) =>
+  get: <T>(path: string, opts?: { timeoutMs?: number | null }) => apiFetch<T>(path, opts),
+  post: <T>(path: string, body?: unknown, opts?: { timeoutMs?: number | null }) =>
     apiFetch<T>(path, {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
+      ...opts,
     }),
-  put: <T>(path: string, body?: unknown) =>
+  put: <T>(path: string, body?: unknown, opts?: { timeoutMs?: number | null }) =>
     apiFetch<T>(path, {
       method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
+      ...opts,
     }),
-  patch: <T>(path: string, body?: unknown) =>
+  patch: <T>(path: string, body?: unknown, opts?: { timeoutMs?: number | null }) =>
     apiFetch<T>(path, {
       method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
+      ...opts,
     }),
 };
