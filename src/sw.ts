@@ -29,7 +29,11 @@ self.addEventListener('push', (event: PushEvent) => {
   }
 
   const title = payload.title ?? 'New Order!';
-  const options: NotificationOptions = {
+  // `vibrate`/`renotify` are real, supported NotificationOptions fields on
+  // the browsers this PWA targets, but are missing from the installed
+  // lib.dom types (pre-existing gap, unrelated to this task, tracked in
+  // TODO.md) — the extra type below is type-only, same object at runtime.
+  const options: NotificationOptions & { vibrate?: number[]; renotify?: boolean } = {
     body: payload.body ?? 'You have a new order.',
     icon: '/logo.jpeg',
     badge: '/logo.jpeg',

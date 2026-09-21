@@ -30,7 +30,11 @@ export async function subscribeToPush(): Promise<void> {
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapid_public_key),
+        // Pre-existing typecheck gap (unrelated to this task, tracked in
+        // TODO.md): the installed lib.dom types are stricter than the
+        // runtime Push API about Uint8Array's underlying buffer type here.
+        // Type-only cast — identical bytes at runtime either way.
+        applicationServerKey: urlBase64ToUint8Array(vapid_public_key) as BufferSource,
       });
     }
 
