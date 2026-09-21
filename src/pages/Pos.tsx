@@ -5,6 +5,8 @@ import type { ApiFetchError } from "@/lib/api";
 import type {
   CartLine, MenuCategoryEntry, MenuItemEntry, Order, POSOrderCreateRequest, POSPaymentMethod, POSSettings, TillSession,
 } from "@/types";
+import type { ReceiptDocument } from "@/types/receipt";
+import { fetchReceiptDocument } from "@/lib/receipts";
 import ItemOptionsDialog from "@/components/pos/ItemOptionsDialog";
 import CartPanel, { lineTotalCents, type OrderMode } from "@/components/pos/CartPanel";
 import PaymentDialog from "@/components/pos/PaymentDialog";
@@ -43,6 +45,7 @@ export default function Pos() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
+  const [receiptDocument, setReceiptDocument] = useState<ReceiptDocument | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [printFailed, setPrintFailed] = useState(false);
 
@@ -244,6 +247,34 @@ export default function Pos() {
   const deliveryFeeCents = orderMode === "DELIVERY" ? (posSettings?.delivery_fee_cents ?? 0) : 0;
   const estimatedTotalCents = Math.max(0, subtotalCents - discountCents) + deliveryFeeCents;
 
+  // Fetches the backend's authoritative receipt document for a just-placed
+  // order and prints THAT — never a locally-rebuilt slip (see BUG-0045).
+  // The sale itself is already safely saved by the time this runs (it is
+  // only ever called from finishSuccessfulSale, strictly after the order
+  // was created and the draft/idempotency state was cleared) — a failure
+  // here can NEVER cause a second POST to /pos/orders, only a "receipt
+  // didn't print" banner with a retry that re-fetches, never re-submits.
+  async function printReceiptForOrder(orderId: string) {
+    try {
+      const doc = await fetchReceiptDocument(orderId);
+      setReceiptDocument(doc);
+      setPrintFailed(false);
+      setShowReceipt(true);
+      // One frame for the hidden receipt to mount before window.print().
+      setTimeout(() => {
+        try {
+          printCustomerReceipt();
+        } catch {
+          setPrintFailed(true);
+        } finally {
+          setShowReceipt(false);
+        }
+      }, 100);
+    } catch {
+      setPrintFailed(true);
+    }
+  }
+
   // Shared by both a normal checkout success and the recovery flow (a
   // same-key resend after an "outcome unknown" submission) — one place that
   // decides what "the sale is definitely done" means, so the two call sites
@@ -257,24 +288,11 @@ export default function Pos() {
 
     // Print AFTER the sale is safely saved, and never inside the try that
     // guards the sale itself. Payment and printing are separate concerns:
-    // an offline printer must not make a paid order look like it failed,
-    // or the cashier will ring it up a second time.
+    // an offline printer (or a receipt fetch that times out) must not make
+    // a paid order look like it failed, or the cashier will ring it up a
+    // second time.
     if (posSettings?.receipt_auto_print !== false) {
-      try {
-        setShowReceipt(true);
-        // One frame for the hidden receipt to mount before window.print().
-        setTimeout(() => {
-          try {
-            printCustomerReceipt();
-          } catch {
-            setPrintFailed(true);
-          } finally {
-            setShowReceipt(false);
-          }
-        }, 100);
-      } catch {
-        setPrintFailed(true);
-      }
+      void printReceiptForOrder(order.id);
     }
   }
 
@@ -364,18 +382,12 @@ export default function Pos() {
     }
   }
 
+  // Manual "Print receipt" / retry button in the success overlay — always
+  // re-fetches the document rather than reusing a stale one, and never
+  // touches the order/checkout endpoint.
   function handlePrintReceipt() {
-    setPrintFailed(false);
-    setShowReceipt(true);
-    setTimeout(() => {
-      try {
-        printCustomerReceipt();
-      } catch {
-        setPrintFailed(true);
-      } finally {
-        setShowReceipt(false);
-      }
-    }, 100);
+    if (!lastOrder) return;
+    void printReceiptForOrder(lastOrder.id);
   }
 
   const searchTouch = useTouchField({ value: search, onChange: setSearch, layout: "QWERTY" });
@@ -650,14 +662,11 @@ export default function Pos() {
         </div>
       )}
 
-      {/* Customer receipt (hidden, only rendered for printing) */}
-      {showReceipt && lastOrder && (
+      {/* Customer receipt (hidden, only rendered for printing) — built from
+          the backend's own receipt document, never from local order state. */}
+      {showReceipt && receiptDocument && (
         <div className="fixed top-0 left-0 z-[9999]">
-          <CustomerReceipt
-            order={lastOrder}
-            businessName={user?.business_name ?? undefined}
-            paperWidthMm={posSettings?.receipt_paper_width_mm ?? 80}
-          />
+          <CustomerReceipt document={receiptDocument} />
         </div>
       )}
 

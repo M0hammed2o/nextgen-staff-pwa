@@ -2,7 +2,10 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
+import type { ApiFetchError } from "@/lib/api";
 import type { Order } from "@/types";
+import type { ReceiptDocument } from "@/types/receipt";
+import { fetchReceiptDocument, reprintReceiptDocument } from "@/lib/receipts";
 import { formatCurrency, formatDateTime, getStatusColor, cn } from "@/lib/utils";
 import StatusActions from "@/components/StatusActions";
 import DeliveryFeePanel from "@/components/DeliveryFeePanel";
@@ -19,7 +22,10 @@ export default function OrderDetail() {
   const { user } = useAuth();
   const [showSlip, setShowSlip] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [isReprint, setIsReprint] = useState(false);
+  const [receiptDocument, setReceiptDocument] = useState<ReceiptDocument | null>(null);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+  const [lastReceiptAction, setLastReceiptAction] = useState<"print" | "reprint" | null>(null);
 
   const { data: posSettings } = useQuery<POSSettings>({
     queryKey: ["pos-settings"],
@@ -47,32 +53,44 @@ export default function OrderDetail() {
     }, 100);
   };
 
-  const handlePrintReceipt = () => {
-    setShowReceipt(true);
-    setTimeout(() => {
-      printCustomerReceipt();
-      setShowReceipt(false);
-    }, 100);
-  };
-
-  // A reprint is recorded server-side before it is printed, so a re-issued
-  // slip can never be passed off as evidence of a second sale. Printing goes
-  // ahead even if that call fails — refusing to reprint because an audit
-  // write failed would be the wrong trade at a till.
-  const handleReprint = async () => {
+  // A reprint must be recorded server-side (the audit event) BEFORE it is
+  // printed — the returned document already carries the REPRINT banner and
+  // the correct reprint_count sourced from that same audit trail. Unlike
+  // the old behaviour (print anyway even if the audit write failed), a
+  // reprint failure now blocks printing entirely: a reprinted slip with no
+  // matching audit event, or with a REPRINT banner invented locally instead
+  // of the backend's own, is worse than a cashier having to tap "Reprint" a
+  // second time — see backend/app/api/v1/routes_receipts.py's own docstring
+  // ("an audit trail is what keeps a reprinted slip from being usable as
+  // evidence of a second one"). A plain (non-reprint) print failure is a
+  // read-only GET — safe to simply retry.
+  async function loadAndPrint(action: "print" | "reprint") {
+    if (!orderId) return;
+    setReceiptError(null);
+    setLastReceiptAction(action);
+    setReceiptLoading(true);
     try {
-      await apiClient.post(`/v1/business/receipts/orders/${orderId}/reprint`, {});
-    } catch {
-      /* still print — see above */
+      const doc = action === "reprint" ? await reprintReceiptDocument(orderId) : await fetchReceiptDocument(orderId);
+      setReceiptDocument(doc);
+      setShowReceipt(true);
+      setTimeout(() => {
+        printCustomerReceipt();
+        setShowReceipt(false);
+      }, 100);
+    } catch (err) {
+      const fallback =
+        action === "reprint"
+          ? "Could not reprint — nothing was printed. Try again."
+          : "Could not load the receipt — try again.";
+      setReceiptError((err as ApiFetchError)?.message ?? fallback);
+    } finally {
+      setReceiptLoading(false);
     }
-    setIsReprint(true);
-    setShowReceipt(true);
-    setTimeout(() => {
-      printCustomerReceipt();
-      setShowReceipt(false);
-      setIsReprint(false);
-    }, 100);
-  };
+  }
+
+  const handlePrintReceipt = () => loadAndPrint("print");
+  const handleReprint = () => loadAndPrint("reprint");
+  const handleRetryReceipt = () => loadAndPrint(lastReceiptAction ?? "print");
 
   if (isLoading) {
     return (
@@ -102,15 +120,11 @@ export default function OrderDetail() {
         </div>
       )}
 
-      {/* Customer Receipt (hidden, only rendered for printing) */}
-      {showReceipt && (
+      {/* Customer Receipt (hidden, only rendered for printing) — built from
+          the backend's own receipt document, never from `order` directly. */}
+      {showReceipt && receiptDocument && (
         <div className="fixed top-0 left-0 z-[9999]">
-          <CustomerReceipt
-            order={order}
-            businessName={user?.business_name ?? undefined}
-            paperWidthMm={posSettings?.receipt_paper_width_mm ?? 80}
-            isReprint={isReprint}
-          />
+          <CustomerReceipt document={receiptDocument} />
         </div>
       )}
 
@@ -144,26 +158,40 @@ export default function OrderDetail() {
 
         <button
           onClick={handlePrintReceipt}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card p-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
+          disabled={receiptLoading}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card p-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary active:scale-[0.98] disabled:opacity-50"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
             <path d="M3 6h18" />
             <path d="M16 10a4 4 0 0 1-8 0" />
           </svg>
-          Print Customer Receipt
+          {receiptLoading ? "Loading receipt…" : "Print Customer Receipt"}
         </button>
 
         <button
           onClick={handleReprint}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card p-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
+          disabled={receiptLoading}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card p-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary active:scale-[0.98] disabled:opacity-50"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
             <path d="M3 3v5h5" />
           </svg>
-          Reprint Receipt
+          {receiptLoading ? "Reprinting…" : "Reprint Receipt"}
         </button>
+
+        {receiptError && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3">
+            <p className="text-sm text-destructive">{receiptError}</p>
+            <button
+              onClick={handleRetryReceipt}
+              className="flex-shrink-0 text-xs font-semibold text-destructive underline-offset-2 hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         <ReversalPanel
           order={order}
