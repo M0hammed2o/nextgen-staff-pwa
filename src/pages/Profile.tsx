@@ -99,7 +99,7 @@ export default function Profile() {
               </div>
               <span
                 className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                  status.paused ? "bg-destructive" : "bg-green-500"
+                  status.paused ? "bg-destructive" : "bg-success"
                 }`}
               />
             </div>
@@ -108,7 +108,7 @@ export default function Profile() {
               disabled={toggling}
               className={`flex h-12 w-full items-center justify-center rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 ${
                 status.paused
-                  ? "bg-green-600 text-white"
+                  ? "bg-success text-success-foreground"
                   : "bg-secondary text-foreground border border-border"
               }`}
             >

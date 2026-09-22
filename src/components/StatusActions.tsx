@@ -40,7 +40,7 @@ const STATUS_FLOW: Record<string, { label: string; next: OrderStatus; variant: s
   ],
   // FIX: was "PREPARING" — backend status is "IN_PROGRESS"
   IN_PROGRESS: [
-    { label: "Mark Ready", next: "READY", variant: "bg-[hsl(var(--success))] text-white" },
+    { label: "Mark Ready", next: "READY", variant: "bg-success text-success-foreground" },
     { label: "Cancel", next: "CANCELLED", variant: "bg-destructive text-destructive-foreground" },
   ],
 };
@@ -50,10 +50,10 @@ function getReadyAction(orderMode: string): { label: string; next: OrderStatus; 
     return { label: "Delivered", next: "DELIVERED", variant: "bg-primary text-primary-foreground" };
   }
   if (orderMode === "DINE_IN") {
-    return { label: "Complete", next: "COMPLETED", variant: "bg-[hsl(var(--success))] text-white" };
+    return { label: "Complete", next: "COMPLETED", variant: "bg-success text-success-foreground" };
   }
   // PICKUP / TAKEAWAY (default)
-  return { label: "Collected", next: "COLLECTED", variant: "bg-[hsl(var(--success))] text-white" };
+  return { label: "Collected", next: "COLLECTED", variant: "bg-success text-success-foreground" };
 }
 
 const TERMINAL_STATUSES = new Set(["COLLECTED", "DELIVERED", "COMPLETED"]);
@@ -228,7 +228,7 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
               }
             }}
             disabled={loading !== null}
-            className="flex h-12 flex-1 items-center justify-center rounded-lg bg-[hsl(var(--success))] text-sm font-semibold text-white disabled:opacity-50"
+            className="flex h-12 flex-1 items-center justify-center rounded-lg bg-success text-sm font-semibold text-success-foreground disabled:opacity-50"
           >
             {loading === "mark-paid" ? (
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -283,7 +283,7 @@ export default function StatusActions({ order, onUpdated }: StatusActionsProps) 
             !paymentMethod ||
             loading === "payment"
           }
-          className="flex h-14 w-full items-center justify-center rounded-lg bg-[hsl(var(--success))] text-sm font-semibold text-white disabled:opacity-50"
+          className="flex h-14 w-full items-center justify-center rounded-lg bg-success text-sm font-semibold text-success-foreground disabled:opacity-50"
         >
           {loading === "payment" ? (
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />

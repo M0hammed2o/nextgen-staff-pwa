@@ -237,7 +237,7 @@ export default function OrderDetail() {
             <span className="text-sm text-muted-foreground">Payment</span>
             <span className={cn(
               "rounded-md px-2 py-0.5 text-xs font-medium",
-              order.payment_status === "PAID" ? "bg-[hsl(var(--success))]/15 text-[hsl(var(--success))]" : "bg-secondary text-secondary-foreground"
+              order.payment_status === "PAID" ? "bg-success/15 text-success" : "bg-secondary text-secondary-foreground"
             )}>
               {order.payment_method ? `${order.payment_method} · ` : ""}{order.payment_status}
             </span>

@@ -162,14 +162,14 @@ export default function PaymentDialog({
 
             <div className={cn(
               "flex items-center justify-between rounded-lg p-3",
-              changeDueCents < 0 ? "bg-destructive/10" : "bg-[hsl(var(--success))]/10"
+              changeDueCents < 0 ? "bg-destructive/10" : "bg-success/10"
             )}>
               <span className="text-sm font-medium text-foreground">
                 {changeDueCents < 0 ? "Still owing" : "Change due"}
               </span>
               <span className={cn(
                 "text-lg font-bold",
-                changeDueCents < 0 ? "text-destructive" : "text-[hsl(var(--success))]"
+                changeDueCents < 0 ? "text-destructive" : "text-success"
               )}>
                 {formatCurrency(Math.abs(changeDueCents))}
               </span>
@@ -195,7 +195,7 @@ export default function PaymentDialog({
                 type="button"
                 onClick={() => onConfirm({ payment_method: "CASH", cash_tendered_cents: cashTenderedCents })}
                 disabled={!canConfirmCash || isSubmitting}
-                className="flex h-14 flex-[2] items-center justify-center rounded-lg bg-[hsl(var(--success))] text-sm font-semibold text-white disabled:opacity-50"
+                className="flex h-14 flex-[2] items-center justify-center rounded-lg bg-success text-sm font-semibold text-success-foreground disabled:opacity-50"
               >
                 {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Complete sale"}
               </button>
@@ -239,7 +239,7 @@ export default function PaymentDialog({
                   payment_reference: reference.trim() || undefined,
                 })}
                 disabled={isSubmitting}
-                className="flex h-14 flex-[2] items-center justify-center rounded-lg bg-[hsl(var(--success))] text-sm font-semibold text-white disabled:opacity-50"
+                className="flex h-14 flex-[2] items-center justify-center rounded-lg bg-success text-sm font-semibold text-success-foreground disabled:opacity-50"
               >
                 {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Confirm approved"}
               </button>
