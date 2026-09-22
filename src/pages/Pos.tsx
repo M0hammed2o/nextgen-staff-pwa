@@ -21,7 +21,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
 import { useTouchKeyboardContext, useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsLandscapePOS } from "@/hooks/useIsLandscapePOS";
 
 function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -32,7 +32,12 @@ export default function Pos() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { close: closeTouchKeyboard } = useTouchKeyboardContext();
-  const isMobile = useIsMobile();
+  // Persistent side-cart (landscape POS terminals) vs mobile-style full-width
+  // cart dialog (any portrait viewport, whatever its width) — see
+  // src/lib/pos-layout.ts and KNOWN_BUGS.md for why this can't be a bare
+  // Tailwind `md:` breakpoint (width alone can't distinguish a portrait
+  // tablet from a landscape terminal at the same width).
+  const isLandscapePOS = useIsLandscapePOS();
   const [activeCategory, setActiveCategory] = useState<string | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [optionsItem, setOptionsItem] = useState<MenuItemEntry | null>(null);
@@ -227,12 +232,13 @@ export default function Pos() {
     };
     setCart((prev) => [...prev, newLine]);
     setOptionsItem(null);
-    // The mobile cart dialog's own content is `md:hidden` (the persistent
-    // desktop/tablet cart panel is always visible instead) — opening it at
-    // md+ widths rendered a full-screen dialog overlay with nothing visible
-    // inside it, and the very next tap anywhere just dismissed that blank
-    // overlay instead of reaching whatever the cashier meant to tap.
-    if (isMobile) setMobileCartOpen(true);
+    // The mobile cart dialog only renders when the persistent side-cart
+    // panel isn't shown (see isLandscapePOS above) — opening it while the
+    // side panel IS shown rendered a full-screen dialog overlay with
+    // nothing visible inside it, and the very next tap anywhere just
+    // dismissed that blank overlay instead of reaching whatever the
+    // cashier meant to tap.
+    if (!isLandscapePOS) setMobileCartOpen(true);
   }
 
   function updateQty(key: string, quantity: number) {
@@ -462,22 +468,32 @@ export default function Pos() {
   );
 
   return (
-    // md:h-[...] shrinks by the on-screen keyboard's height (0px when
-    // closed, via the --touch-keyboard-height CSS var TouchKeyboard.tsx
-    // sets) so the persistent desktop/tablet cart panel's checkout button
-    // and order total are pushed up above the keyboard instead of being
-    // covered by it, without any JS-driven layout branching here.
-    // `md:min-h-0` is load-bearing: the base `min-h-screen` (needed on
-    // mobile, where this is a normally-scrolling document) sets a
-    // min-height of 100vh, which previously silently WON over the `md:h-`
-    // rule above whenever the keyboard was open (min-height always wins
-    // over a smaller explicit height) — the container never actually
-    // shrank, so content stayed exactly as tall as the keyboard covered.
-    // `md:pb-[var(--bottom-nav-height,0px)]` reserves real, measured space
-    // (BottomNav.tsx) for the always-`fixed` bottom nav at md+ widths too —
-    // previously `md:pb-0` reserved none at all, leaving only a ~5px sliver
-    // of the Checkout button tappable above the nav at 1366x768/1024x768.
-    <div className="min-h-screen bg-background pb-28 md:min-h-0 md:flex md:h-[calc(100vh-var(--touch-keyboard-height,0px))] md:flex-col md:pb-[var(--bottom-nav-height,0px)]">
+    // The persistent-side-cart layout (isLandscapePOS) drives this
+    // container's shrink-by-the-on-screen-keyboard height (0px when closed,
+    // via the --touch-keyboard-height CSS var TouchKeyboard.tsx sets) so the
+    // panel's checkout button and order total are pushed up above the
+    // keyboard instead of being covered by it. This used to be a bare
+    // Tailwind `md:` breakpoint (width-only) — now driven by
+    // useIsLandscapePOS() instead, since a portrait tablet can share a
+    // width with a landscape terminal but needs the OTHER (mobile-style)
+    // layout entirely, not just a narrower cart (see KNOWN_BUGS.md).
+    // The `min-h-0` override is load-bearing whenever isLandscapePOS is
+    // true: the base `min-h-screen` (needed for the normally-scrolling
+    // mobile-style layout) sets a min-height of 100vh, which previously
+    // silently WON over the explicit `h-[...]` rule below whenever the
+    // keyboard was open (min-height always wins over a smaller explicit
+    // height) — the container never actually shrank, so content stayed
+    // exactly as tall as the keyboard covered.
+    // `pb-[var(--bottom-nav-height,0px)]` reserves real, measured space
+    // (BottomNav.tsx) for the always-`fixed` bottom nav in this layout too —
+    // reserving none at all left only a ~5px sliver of the Checkout button
+    // tappable above the nav at 1366x768/1024x768.
+    <div
+      className={cn(
+        "min-h-screen bg-background pb-28",
+        isLandscapePOS && "min-h-0 flex h-[calc(100vh-var(--touch-keyboard-height,0px))] flex-col pb-[var(--bottom-nav-height,0px)]"
+      )}
+    >
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top">
         <div className="flex items-center justify-between px-4 py-4">
           <div>
@@ -586,9 +602,9 @@ export default function Pos() {
         </div>
       )}
 
-      <div className="md:flex md:flex-1 md:overflow-hidden">
+      <div className={cn(isLandscapePOS && "flex flex-1 overflow-hidden")}>
         {/* Left: product grid */}
-        <div className="px-4 py-4 md:flex-1 md:overflow-y-auto">
+        <div className={cn("px-4 py-4", isLandscapePOS && "flex-1 overflow-y-auto")}>
           {isLoading ? (
             <div className="flex min-h-[40vh] items-center justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -625,10 +641,14 @@ export default function Pos() {
           )}
         </div>
 
-        {/* Right: persistent cart panel — desktop/tablet only, always visible */}
-        <div className="hidden md:flex md:w-[380px] md:flex-shrink-0 md:flex-col md:border-l md:border-border md:bg-card">
-          {cartPanel}
-        </div>
+        {/* Right: persistent cart panel — landscape POS layout only (see
+            isLandscapePOS above); a portrait viewport of any width gets the
+            mobile-style dialog cart below instead. */}
+        {isLandscapePOS && (
+          <div className="flex w-[380px] flex-shrink-0 flex-col border-l border-border bg-card">
+            {cartPanel}
+          </div>
+        )}
       </div>
 
       {/* Blocking recovery overlay — shown whenever a checkout request's
@@ -765,11 +785,12 @@ export default function Pos() {
         </div>
       )}
 
-      {/* Mobile: floating cart bar opens a dialog with the same CartPanel */}
-      {cart.length > 0 && (
+      {/* Mobile-style layout (any portrait viewport — see isLandscapePOS
+          above): floating cart bar opens a dialog with the same CartPanel */}
+      {!isLandscapePOS && cart.length > 0 && (
         <button
           onClick={() => setMobileCartOpen(true)}
-          className="fixed bottom-20 left-4 right-4 z-40 flex items-center justify-between rounded-xl bg-primary px-5 py-4 text-primary-foreground shadow-lg md:hidden"
+          className="fixed bottom-20 left-4 right-4 z-40 flex items-center justify-between rounded-xl bg-primary px-5 py-4 text-primary-foreground shadow-lg"
         >
           <span className="flex items-center gap-2 text-sm font-semibold">
             <ShoppingBag className="h-5 w-5" />
@@ -779,8 +800,8 @@ export default function Pos() {
         </button>
       )}
 
-      <Dialog open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
-        <DialogContent className="max-h-[90vh] overflow-hidden p-0 md:hidden">
+      <Dialog open={!isLandscapePOS && mobileCartOpen} onOpenChange={setMobileCartOpen}>
+        <DialogContent className="max-h-[90vh] overflow-hidden p-0">
           <DialogHeader className="p-4 pb-0">
             <DialogTitle className="sr-only">Current order</DialogTitle>
           </DialogHeader>
