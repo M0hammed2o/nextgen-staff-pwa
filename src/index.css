@@ -3,7 +3,66 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light theme (default). This is a till used for hours at a time under
+     bright kitchen/restaurant lighting, so several tokens are deliberately
+     pushed to higher contrast than the manager dashboard's equivalents
+     (`nextgen-insights-main/src/index.css`, the palette this was aligned
+     to) rather than copied verbatim — see WORKLOG.md for the full list of
+     deviations and why. `--radius` is also deliberately left larger
+     (0.75rem, vs the manager dashboard's 0.5rem) — bigger rounded corners
+     read better on the big touch tiles/buttons this app is built from. */
   :root {
+    --background: 210 20% 96%;
+    --foreground: 220 25% 9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 9%;
+
+    --primary: 207 80% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 214 20% 91%;
+    --secondary-foreground: 220 25% 10%;
+
+    --muted: 214 20% 93%;
+    --muted-foreground: 215 18% 38%;
+
+    --accent: 207 80% 95%;
+    --accent-foreground: 207 80% 30%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 72% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 42%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 214 20% 82%;
+    --input: 214 20% 82%;
+    --ring: 207 80% 42%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 25% 10%;
+    --sidebar-primary: 207 80% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 214 20% 93%;
+    --sidebar-accent-foreground: 220 25% 10%;
+    --sidebar-border: 214 20% 85%;
+    --sidebar-ring: 207 80% 42%;
+  }
+
+  /* Dark theme — not currently loaded by default (no toggle wires `.dark`
+     onto the document today; see WORKLOG.md), kept available for a possible
+     future setting. These are the app's previous default values, carried
+     over unchanged so nothing regresses if `.dark` is ever activated. */
+  .dark {
     --background: 220 40% 8%;
     --foreground: 210 20% 92%;
 
@@ -37,8 +96,6 @@
     --border: 220 20% 20%;
     --input: 220 20% 20%;
     --ring: 205 85% 50%;
-
-    --radius: 0.75rem;
 
     --sidebar-background: 220 35% 10%;
     --sidebar-foreground: 210 20% 92%;
