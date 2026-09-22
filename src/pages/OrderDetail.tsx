@@ -11,9 +11,11 @@ import StatusActions from "@/components/StatusActions";
 import DeliveryFeePanel from "@/components/DeliveryFeePanel";
 import KitchenSlip, { printKitchenSlip } from "@/components/KitchenSlip";
 import CustomerReceipt, { printCustomerReceipt } from "@/components/CustomerReceipt";
+import ReceiptSendDialog from "@/components/pos/ReceiptSendDialog";
 import { useAuth } from "@/lib/auth";
 import ReversalPanel from "@/components/ReversalPanel";
 import type { POSSettings } from "@/types";
+import { MessageCircle } from "lucide-react";
 
 export default function OrderDetail() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -26,6 +28,15 @@ export default function OrderDetail() {
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [lastReceiptAction, setLastReceiptAction] = useState<"print" | "reprint" | null>(null);
+  const [resendDialogOpen, setResendDialogOpen] = useState(false);
+
+  // A resend here is explicitly about an already-SENT/DELIVERED receipt
+  // (or simply re-sending with a corrected number) — the backend requires
+  // force_resend=true for that, and gates it to OWNER/MANAGER at the route
+  // layer (backend/app/api/v1/routes_pos.py::request_pos_receipt). A plain
+  // STAFF cashier never sees this action at all, matching that rule rather
+  // than relying on a 403 to hide it.
+  const canResendReceipt = user?.role === "OWNER" || user?.role === "MANAGER";
 
   const { data: posSettings } = useQuery<POSSettings>({
     queryKey: ["pos-settings"],
@@ -186,6 +197,16 @@ export default function OrderDetail() {
           {receiptLoading ? "Reprinting…" : "Reprint Receipt"}
         </button>
 
+        {canResendReceipt && (
+          <button
+            onClick={() => setResendDialogOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card p-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary active:scale-[0.98]"
+          >
+            <MessageCircle className="h-4 w-4" />
+            Resend Receipt via WhatsApp
+          </button>
+        )}
+
         {receiptError && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3">
             <p className="text-sm text-destructive">{receiptError}</p>
@@ -328,6 +349,17 @@ export default function OrderDetail() {
           <StatusActions order={order} onUpdated={handleUpdated} />
         </div>
       </div>
+
+      {canResendReceipt && (
+        <ReceiptSendDialog
+          open={resendDialogOpen}
+          onClose={() => setResendDialogOpen(false)}
+          orderId={order.id}
+          prefillPhone={order.phone_number}
+          forceResend
+          title="Resend receipt"
+        />
+      )}
     </div>
   );
 }

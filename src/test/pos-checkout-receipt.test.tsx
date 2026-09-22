@@ -188,8 +188,10 @@ describe("Pos checkout → receipt print", () => {
     expect(postMock).toHaveBeenCalledTimes(1);
     expect(postMock).toHaveBeenCalledWith("/v1/business/pos/orders", expect.objectContaining({ idempotency_key: expect.any(String) }));
 
-    // Manual retry re-fetches the receipt, never re-submits the sale.
-    fireEvent.click(screen.getByRole("button", { name: /Print receipt/ }));
+    // Manual retry re-fetches the receipt, never re-submits the sale. The
+    // post-sale receipt step now offers Print/WhatsApp/Both/No receipt —
+    // "Print" reuses the exact same handlePrintReceipt retry as before.
+    fireEvent.click(screen.getByRole("button", { name: "Print" }));
     await waitFor(() => {
       const receiptCalls = getMock.mock.calls.filter(([path]) => String(path).startsWith("/v1/business/receipts/orders/"));
       expect(receiptCalls.length).toBeGreaterThanOrEqual(2);

@@ -12,10 +12,11 @@ import CartPanel, { lineTotalCents, type OrderMode } from "@/components/pos/Cart
 import PaymentDialog from "@/components/pos/PaymentDialog";
 import CashupDialog from "@/components/pos/CashupDialog";
 import CustomerReceipt, { printCustomerReceipt } from "@/components/CustomerReceipt";
+import ReceiptSendDialog from "@/components/pos/ReceiptSendDialog";
 import EmptyState from "@/components/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
-import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw } from "lucide-react";
+import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
@@ -52,6 +53,13 @@ export default function Pos() {
   const [receiptDocument, setReceiptDocument] = useState<ReceiptDocument | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [printFailed, setPrintFailed] = useState(false);
+  // The post-sale "Print / WhatsApp / Both / No receipt" choice — see
+  // ReceiptSendDialog for the actual WhatsApp send/status/retry flow this
+  // opens. Tracked only to show a small "no receipt sent" confirmation and
+  // to tell ReceiptSendDialog whether a print was ALSO requested (for its
+  // "WhatsApp isn't available" copy) — never gates anything security-related.
+  const [receiptChoice, setReceiptChoice] = useState<"PRINT" | "WHATSAPP" | "BOTH" | "NONE" | null>(null);
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
 
   // ── Draft persistence + checkout submission state machine ───────────────
   // See src/lib/pos-draft.ts for the full design rationale. Short version:
@@ -292,6 +300,8 @@ export default function Pos() {
     setPaymentOpen(false);
     setMobileCartOpen(false);
     setLastOrder(order);
+    setReceiptChoice(null);
+    setWhatsappDialogOpen(false);
     resetForNextSale();
     // Don't wait for PaymentDialog's close animation to unmount the cash
     // field (that's what used to leave the keyboard open, covering the
@@ -403,6 +413,22 @@ export default function Pos() {
   function handlePrintReceipt() {
     if (!lastOrder) return;
     void printReceiptForOrder(lastOrder.id);
+  }
+
+  // The post-sale receipt step: Print/Both trigger the EXISTING print flow
+  // above (never re-implemented here); WhatsApp/Both open ReceiptSendDialog
+  // for the actual send/status/retry. "No receipt" makes no call at all —
+  // it only records the choice so the cashier gets a small confirmation
+  // that nothing was sent, it never auto-dismisses "Sale complete" (the
+  // order total/change info there may still be worth a glance).
+  function handleReceiptChoice(choice: "PRINT" | "WHATSAPP" | "BOTH" | "NONE") {
+    setReceiptChoice(choice);
+    if (choice === "PRINT" || choice === "BOTH") {
+      handlePrintReceipt();
+    }
+    if (choice === "WHATSAPP" || choice === "BOTH") {
+      setWhatsappDialogOpen(true);
+    }
   }
 
   const searchTouch = useTouchField({ value: search, onChange: setSearch, layout: "QWERTY" });
@@ -670,17 +696,57 @@ export default function Pos() {
                 </p>
               </div>
             )}
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                onClick={handlePrintReceipt}
-                className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
-              >
-                <Printer className="h-4 w-4" /> Print receipt
-              </button>
+            {/* Receipt step: an explicit choice rather than a silent print —
+                Print/Both reuse the exact same print flow as the old
+                single "Print receipt" button above (still the only thing
+                that ever touches the printer); WhatsApp/Both open
+                ReceiptSendDialog. Auto-print (posSettings.receipt_auto_print,
+                unchanged, above in finishSuccessfulSale) already ran before
+                this renders — tapping Print/Both again here is a deliberate
+                reprint/retry, same as before. */}
+            <div className="mt-5 space-y-2">
+              <p className="text-center text-xs font-medium text-muted-foreground">Receipt</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleReceiptChoice("PRINT")}
+                  className="flex h-14 flex-col items-center justify-center gap-1 rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                >
+                  <Printer className="h-4 w-4" /> Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleReceiptChoice("WHATSAPP")}
+                  className="flex h-14 flex-col items-center justify-center gap-1 rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                >
+                  <MessageCircle className="h-4 w-4" /> WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleReceiptChoice("BOTH")}
+                  className="flex h-12 items-center justify-center rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                >
+                  Both
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleReceiptChoice("NONE")}
+                  className="flex h-12 items-center justify-center rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                >
+                  No receipt
+                </button>
+              </div>
+              {receiptChoice === "NONE" && (
+                <p className="text-center text-xs text-muted-foreground">No receipt will be sent.</p>
+              )}
+            </div>
+            <div className="mt-3 flex flex-col gap-2">
               <button
                 onClick={() => {
                   setPrintFailed(false);
                   setLastOrder(null);
+                  setReceiptChoice(null);
+                  setWhatsappDialogOpen(false);
                 }}
                 className="flex h-12 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground active:bg-primary/90"
               >
@@ -735,6 +801,17 @@ export default function Pos() {
         isSubmitting={isSubmitting}
         errorMessage={errorMessage}
       />
+
+      {lastOrder && (
+        <ReceiptSendDialog
+          open={whatsappDialogOpen}
+          onClose={() => setWhatsappDialogOpen(false)}
+          orderId={lastOrder.id}
+          prefillPhone={lastOrder.phone_number}
+          forceResend={false}
+          printAlsoRequested={receiptChoice === "BOTH"}
+        />
+      )}
     </div>
   );
 }

@@ -281,6 +281,30 @@ export interface POSVoidRequest {
   reason: string;
 }
 
+// POST /v1/business/pos/orders/{order_id}/receipt — mirrors
+// backend/app/api/v1/routes_pos.py::POSReceiptRequest/POSReceiptResponse
+// exactly. `force_resend` is checked at the route layer (OWNER/MANAGER
+// only) — a STAFF caller must never set it to true.
+export type POSReceiptChannel = "PRINT" | "WHATSAPP";
+
+export interface POSReceiptRequest {
+  channels: POSReceiptChannel[];
+  phone_number?: string | null;
+  force_resend?: boolean;
+}
+
+export type WhatsAppReceiptStatus = "NOT_REQUESTED" | "QUEUED" | "SENT" | "DELIVERED" | "FAILED";
+
+export interface POSReceiptResponse {
+  id: string;
+  order_id: string;
+  receipt_url: string;
+  print_requested: boolean;
+  whatsapp_requested: boolean;
+  whatsapp_status: WhatsAppReceiptStatus;
+  whatsapp_failure_reason?: string | null;
+}
+
 // GET /v1/business/pos/settings — staff-readable subset of business settings
 export interface POSSettings {
   cash_enabled: boolean;
