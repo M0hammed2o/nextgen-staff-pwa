@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
+import { setStoredInputMode } from "@/lib/touch-input";
 import type { POSReceiptResponse } from "@/types";
 
 const postMock = vi.fn();
@@ -13,6 +15,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import ReceiptSendDialog from "@/components/pos/ReceiptSendDialog";
+import TouchKeyboard from "@/components/TouchKeyboard";
 
 function renderDialog(props: Partial<React.ComponentProps<typeof ReceiptSendDialog>> = {}) {
   return render(
@@ -25,6 +28,37 @@ function renderDialog(props: Partial<React.ComponentProps<typeof ReceiptSendDial
           prefillPhone={null}
           {...props}
         />
+      </TouchKeyboardProvider>
+    </MemoryRouter>
+  );
+}
+
+/**
+ * Stateful wrapper so `onClose` actually flips the dialog's own `open` prop
+ * to false (a bare `vi.fn()` onClose, as used by every other test in this
+ * file, never exercises the real close path a cashier's tap goes through) —
+ * needed to reproduce BUG-0080, where the bug is specifically about what
+ * happens to app state (the shared on-screen keyboard) once the dialog is
+ * told to close.
+ */
+function StatefulHarness(props: Partial<React.ComponentProps<typeof ReceiptSendDialog>> = {}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <MemoryRouter initialEntries={["/pos"]}>
+      <TouchKeyboardProvider>
+        <ReceiptSendDialog
+          open={open}
+          onClose={() => setOpen(false)}
+          orderId="order-1"
+          prefillPhone={null}
+          {...props}
+        />
+        <TouchKeyboard />
+        <div>
+          <button type="button">New sale</button>
+          <button type="button">Both</button>
+          <button type="button">No receipt</button>
+        </div>
       </TouchKeyboardProvider>
     </MemoryRouter>
   );
@@ -45,10 +79,12 @@ function baseResponse(overrides: Partial<POSReceiptResponse> = {}): POSReceiptRe
 
 beforeEach(() => {
   postMock.mockReset();
+  localStorage.clear();
 });
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
 });
 
 describe("ReceiptSendDialog", () => {
@@ -132,5 +168,57 @@ describe("ReceiptSendDialog", () => {
     postMock.mockResolvedValueOnce(baseResponse({ whatsapp_status: "SENT" }));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
+  });
+
+  describe("BUG-0080: on-screen keyboard must close with the dialog, not just the phone field", () => {
+    beforeEach(() => {
+      setStoredInputMode("touch");
+    });
+
+    it("closes the on-screen keyboard (and un-covers the receipt-choice buttons) when a WhatsApp send failure is dismissed via the dialog's own Close button", async () => {
+      postMock.mockResolvedValueOnce(
+        // Real shape of the documented failure: whatsapp_status FAILED with
+        // a plain-language reason (e.g. no whatsapp_phone_number_id
+        // configured).
+        baseResponse({
+          whatsapp_status: "FAILED",
+          whatsapp_failure_reason: "Could not send the receipt — business has no whatsapp_phone_number_id configured",
+        })
+      );
+
+      render(<StatefulHarness />);
+
+      const phoneInput = screen.getByPlaceholderText("082 123 4567");
+      fireEvent.change(phoneInput, { target: { value: "0821234567" } });
+      fireEvent.focus(phoneInput);
+
+      // The on-screen keyboard is open, driven by the phone field. Queried
+      // by its DOM marker (not role/name) because Radix aria-hides
+      // everything outside the open modal's own subtree while it's open —
+      // a real, accepted, screen-reader-only gap (see TouchKeyboard.tsx's
+      // own comment on this) that would otherwise make this presence check
+      // brittle even though the keyboard is genuinely on screen and
+      // pointer-interactive.
+      expect(document.querySelector("[data-touch-keyboard-root]")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+      await screen.findByText("Could not send the receipt — business has no whatsapp_phone_number_id configured");
+
+      // Dismiss the error via the dialog's own top-right Close ("X") button
+      // — the exact BUG-0080 repro step, not Cancel/Retry/Edit number.
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+      // The dialog is gone...
+      await waitFor(() => expect(screen.queryByText("Send receipt via WhatsApp")).not.toBeInTheDocument());
+      // ...and, critically, so is the on-screen keyboard: it must not be left
+      // pinned to the bottom of the viewport covering the Receipt-choice
+      // buttons underneath.
+      expect(document.querySelector("[data-touch-keyboard-root]")).not.toBeInTheDocument();
+
+      // The Receipt-choice buttons underneath are reachable again.
+      expect(screen.getByRole("button", { name: "New sale" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Both" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "No receipt" })).toBeVisible();
+    });
   });
 });

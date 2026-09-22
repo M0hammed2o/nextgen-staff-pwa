@@ -6,6 +6,7 @@ import type { ApiFetchError } from "@/lib/api";
 import type { POSReceiptResponse } from "@/types";
 import { looksLikeSaPhoneNumber } from "@/lib/phone";
 import { useTouchField } from "@/hooks/useTouchField";
+import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
 
 /**
  * The single reusable "send this order's digital receipt over WhatsApp"
@@ -52,6 +53,7 @@ export default function ReceiptSendDialog({
   const [result, setResult] = useState<ResultState | null>(null);
 
   const phoneTouch = useTouchField({ value: phone, onChange: setPhone, layout: "PHONE", maxLength: 20 });
+  const { close: closeTouchKeyboard } = useTouchKeyboardContext();
 
   useEffect(() => {
     if (open) {
@@ -108,8 +110,23 @@ export default function ReceiptSendDialog({
     setResult(null);
   }
 
+  // Every exit path (the dialog's own X/Escape/outside-click via
+  // onOpenChange, and every in-dialog Cancel/Done/Close/OK button) must
+  // close the on-screen touch keyboard explicitly rather than relying on
+  // the phone field unmounting to do it — this component itself never
+  // unmounts just because `open` becomes false (its parent keeps it mounted
+  // across sends via the `open` prop, same as PaymentDialog/CashupDialog),
+  // and the phone <input> only exists during the "form" step, so a close
+  // from "sending"/"result" never blurs or unmounts the field that opened
+  // the keyboard in the first place. Matches CashupDialog's
+  // handleDialogClose() pattern (see BUG-0080).
+  function handleClose() {
+    closeTouchKeyboard();
+    onClose();
+  }
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title ?? "Send receipt via WhatsApp"}</DialogTitle>
@@ -135,7 +152,7 @@ export default function ReceiptSendDialog({
             <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-2 border-t border-border bg-background px-6 py-4">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 className="flex h-14 flex-1 items-center justify-center rounded-lg border border-border text-sm font-medium text-foreground"
               >
                 Cancel
@@ -168,7 +185,7 @@ export default function ReceiptSendDialog({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex h-14 w-full items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground"
             >
               Done
@@ -210,7 +227,7 @@ export default function ReceiptSendDialog({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex h-14 w-full items-center justify-center rounded-lg border border-border text-sm font-medium text-foreground"
             >
               Close
@@ -231,7 +248,7 @@ export default function ReceiptSendDialog({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex h-14 w-full items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground"
             >
               OK
