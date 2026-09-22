@@ -4,7 +4,8 @@ import { apiClient } from "@/lib/api";
 import { usePOSSettings } from "@/lib/pos-settings";
 import type { StocktakeHistoryEntry, StocktakeLine, StocktakeSession } from "@/types";
 import { cn, formatCurrency } from "@/lib/utils";
-import { ClipboardCheck, History, Loader2 } from "lucide-react";
+import { ClipboardCheck, History, Loader2, Search } from "lucide-react";
+import EmptyState from "@/components/EmptyState";
 import { useTouchField } from "@/hooks/useTouchField";
 import {
   buildCountsPayload,
@@ -336,8 +337,8 @@ export default function Stocktake() {
                 );
               })}
               {lines.length === 0 && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No ingredients match that search.
+                <li>
+                  <EmptyState icon={Search} title="No ingredients match that search" className="min-h-0 py-8" />
                 </li>
               )}
             </ul>
@@ -365,9 +366,7 @@ export default function Stocktake() {
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       ) : history.length === 0 ? (
-        <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-          No counts have been taken yet.
-        </p>
+        <EmptyState icon={History} title="No counts have been taken yet" className="py-10" />
       ) : (
         <ul className="divide-y divide-border">
           {history.map((h) => (

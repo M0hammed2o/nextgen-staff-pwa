@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import type { Order, PaginatedResponse } from "@/types";
 import OrderCard from "@/components/OrderCard";
+import EmptyState from "@/components/EmptyState";
+import { ClipboardCheck } from "lucide-react";
 
 export default function CompletedOrders() {
   const [search, setSearch] = useState("");
@@ -63,11 +65,12 @@ export default function CompletedOrders() {
         />
 
         {filtered.length === 0 ? (
-          <div className="flex min-h-[30vh] flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm text-muted-foreground">
-              {search ? "No matching orders" : "No completed orders yet"}
-            </p>
-          </div>
+          <EmptyState
+            icon={ClipboardCheck}
+            title={search ? "No matching orders" : "No completed orders yet"}
+            description={search ? "Try a different order number or name" : undefined}
+            className="min-h-[30vh]"
+          />
         ) : (
           <div className="space-y-3">
             {filtered.map((order) => (

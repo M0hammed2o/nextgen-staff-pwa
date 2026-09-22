@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient, createSSEConnection } from "@/lib/api";
 import type { Order, PaginatedResponse } from "@/types";
 import OrderCard from "@/components/OrderCard";
+import EmptyState from "@/components/EmptyState";
+import { ShoppingBag } from "lucide-react";
 import { subscribeToPush } from "@/lib/push-notifications";
 
 function playNewOrderAlert(): void {
@@ -141,17 +143,12 @@ export default function LiveOrders() {
 
       <div className="mx-auto max-w-lg px-4 py-4">
         {orders.length === 0 ? (
-          <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
-                <path d="M3 6h18" />
-                <path d="M16 10a4 4 0 0 1-8 0" />
-              </svg>
-            </div>
-            <p className="text-sm font-medium text-foreground">No active orders</p>
-            <p className="text-xs text-muted-foreground">New orders will appear here automatically</p>
-          </div>
+          <EmptyState
+            icon={ShoppingBag}
+            title="No active orders"
+            description="New orders will appear here automatically"
+            className="min-h-[40vh]"
+          />
         ) : (
           <div className="space-y-3">
             {orders.map((order) => (

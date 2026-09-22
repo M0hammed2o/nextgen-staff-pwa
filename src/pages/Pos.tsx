@@ -12,6 +12,7 @@ import CartPanel, { lineTotalCents, type OrderMode } from "@/components/pos/Cart
 import PaymentDialog from "@/components/pos/PaymentDialog";
 import CashupDialog from "@/components/pos/CashupDialog";
 import CustomerReceipt, { printCustomerReceipt } from "@/components/CustomerReceipt";
+import EmptyState from "@/components/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw } from "lucide-react";
@@ -569,7 +570,11 @@ export default function Pos() {
           ) : itemsError ? (
             <p className="py-8 text-center text-sm text-destructive">Failed to load the menu</p>
           ) : visibleItems.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No menu items found</p>
+            <EmptyState
+              icon={ShoppingBag}
+              title="No menu items found"
+              description={search.trim() ? "Try a different search" : "Add items to the menu from the Manager Dashboard"}
+            />
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4">
               {visibleItems.map((item) => (

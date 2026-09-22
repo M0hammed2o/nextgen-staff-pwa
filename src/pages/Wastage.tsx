@@ -4,6 +4,8 @@ import { apiClient } from "@/lib/api";
 import type { IngredientSummary, POSSettings, WastageReasonOption } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
+import EmptyState from "@/components/EmptyState";
+import { Search } from "lucide-react";
 
 /**
  * Quick wastage capture.
@@ -129,7 +131,7 @@ export default function Wastage() {
       <h1 className="text-lg font-bold text-foreground">Record wastage</h1>
 
       {done && (
-        <div className="mt-3 rounded-lg border border-[hsl(var(--success))]/40 bg-[hsl(var(--success))]/10 p-3">
+        <div className="mt-3 rounded-lg border border-success/40 bg-success/10 p-3">
           <p className="text-sm font-medium text-foreground">{done}</p>
         </div>
       )}
@@ -147,11 +149,11 @@ export default function Wastage() {
           {isLoading ? (
             <p className="mt-6 text-center text-sm text-muted-foreground">Loading…</p>
           ) : filtered.length === 0 ? (
-            <p className="mt-6 text-center text-sm text-muted-foreground">
-              {ingredients.length === 0
-                ? "No ingredients set up yet."
-                : "Nothing matches that search."}
-            </p>
+            <EmptyState
+              icon={Search}
+              title={ingredients.length === 0 ? "No ingredients set up yet" : "Nothing matches that search"}
+              className="py-6"
+            />
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-2">
               {filtered.map((item) => (
