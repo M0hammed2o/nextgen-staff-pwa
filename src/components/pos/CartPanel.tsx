@@ -3,6 +3,7 @@ import type { CartLine, POSSettings } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
+import LoyaltyBalance from "./LoyaltyBalance";
 
 export type OrderMode = "PICKUP" | "DELIVERY" | "DINE_IN";
 
@@ -186,6 +187,9 @@ export default function CartPanel({
                   {...customerPhoneTouch.fieldProps}
                 />
               </div>
+              {/* Balance-only today — see LoyaltyBalance.tsx for why reward
+                  redemption isn't wired up here yet (KNOWN_BUGS.md BUG-0102). */}
+              <LoyaltyBalance phone={customerPhone} />
             </div>
 
             {/* Discount (optional) */}

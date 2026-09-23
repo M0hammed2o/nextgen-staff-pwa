@@ -176,6 +176,21 @@ export default function CustomerReceipt({ document: doc }: CustomerReceiptProps)
             <span>{totals.discount_display}</span>
           </div>
         )}
+        {totals.loyalty_discount_display && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>
+                Loyalty reward{totals.loyalty_reward_name ? ` (${totals.loyalty_reward_name})` : ""}
+              </span>
+              <span>{totals.loyalty_discount_display}</span>
+            </div>
+            {totals.loyalty_points_redeemed > 0 && (
+              <div style={{ fontSize: "10px", paddingLeft: "8px", color: "#333" }}>
+                {totals.loyalty_points_redeemed} pts redeemed
+              </div>
+            )}
+          </div>
+        )}
         {totals.vat_display && (
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>

@@ -43,6 +43,16 @@ export interface ReceiptTotals {
   discount_cents: number;
   discount_display: string | null;
   discount_reason: string | null;
+  // Loyalty reward redemption — a distinct line from the staff/manual
+  // discount above (backend/app/receipts/document.py::ReceiptTotals,
+  // migration 0050). loyalty_discount_cents is the CLAMPED amount actually
+  // applied to this sale; loyalty_points_redeemed is always the reward's
+  // FULL points cost, even when the discount was clamped (the customer
+  // still spent the whole points cost — see DECISIONS.md).
+  loyalty_discount_cents: number;
+  loyalty_discount_display: string | null;
+  loyalty_reward_name: string | null;
+  loyalty_points_redeemed: number;
   delivery_fee_cents: number;
   delivery_fee_display: string | null;
   vat_cents: number;

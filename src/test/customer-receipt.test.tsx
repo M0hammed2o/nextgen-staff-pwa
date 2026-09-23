@@ -64,6 +64,10 @@ function baseDocument(overrides: Partial<ReceiptDocument> = {}): ReceiptDocument
       discount_cents: 800,
       discount_display: "-R8.00",
       discount_reason: "Staff discount",
+      loyalty_discount_cents: 0,
+      loyalty_discount_display: null,
+      loyalty_reward_name: null,
+      loyalty_points_redeemed: 0,
       delivery_fee_cents: 0,
       delivery_fee_display: null,
       vat_cents: 3261,
@@ -157,6 +161,31 @@ describe("CustomerReceipt — totals, discount, VAT, payment", () => {
     render(<CustomerReceipt document={baseDocument()} />);
     expect(screen.getByText("Discount (Staff discount)")).toBeInTheDocument();
     expect(screen.getByText("-R8.00")).toBeInTheDocument();
+  });
+
+  it("shows a loyalty reward discount line with the reward name and points redeemed", () => {
+    render(
+      <CustomerReceipt
+        document={baseDocument({
+          totals: {
+            ...baseDocument().totals,
+            loyalty_discount_cents: 5000,
+            loyalty_discount_display: "-R50.00",
+            loyalty_reward_name: "Free Large Pizza",
+            loyalty_points_redeemed: 200,
+          },
+        })}
+      />
+    );
+    expect(screen.getByText("Loyalty reward (Free Large Pizza)")).toBeInTheDocument();
+    expect(screen.getByText("-R50.00")).toBeInTheDocument();
+    expect(screen.getByText("200 pts redeemed")).toBeInTheDocument();
+  });
+
+  it("omits the loyalty reward line entirely when no reward was redeemed on this order", () => {
+    render(<CustomerReceipt document={baseDocument()} />);
+    expect(screen.queryByText(/Loyalty reward/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pts redeemed/)).not.toBeInTheDocument();
   });
 
   it("shows the VAT rate and inclusive/exclusive label when the backend supplies one", () => {

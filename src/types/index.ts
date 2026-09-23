@@ -450,6 +450,20 @@ export interface TillCloseRequest {
   counted_cash_cents: number;
 }
 
+// GET /v1/business/loyalty/customers/lookup?phone= — mirrors
+// backend/app/api/v1/routes_loyalty.py::CustomerLoyaltyResponse exactly.
+// See src/lib/loyalty.ts for the two backend quirks callers must handle:
+// looking a customer up by phone CREATES them as a side effect, and the
+// route 404s (LOYALTYPROGRAM_NOT_FOUND) whenever the business hasn't
+// enabled its loyalty programme.
+export interface CustomerLoyaltyResponse {
+  customer_id: string;
+  display_name: string | null;
+  phone_number: string | null;
+  loyalty_points_balance: number;
+  loyalty_tier: string;
+}
+
 // One line in the till's in-progress cart, before submission. Prices here
 // are computed client-side purely so staff can see a running total while
 // building the order — the server always recomputes and is the only
