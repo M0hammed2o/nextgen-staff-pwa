@@ -241,4 +241,70 @@ describe("LoyaltyRewardPicker — no rewards / loading / error states", () => {
     await waitFor(() => expect(getMock).toHaveBeenCalled());
     await waitFor(() => expect(container.textContent).toBe(""));
   });
+
+  it("shows nothing when the customer lookup 409s with LOYALTY_NOT_ENABLED (the platform entitlement gate, BUG-0108) — no error text, and the rewards endpoint is never called", async () => {
+    getMock.mockImplementation((path: string) => {
+      if (path.startsWith("/v1/business/loyalty/customers/lookup")) {
+        return Promise.reject({
+          message: "The loyalty module is not enabled for this business",
+          status: 409,
+          code: "LOYALTY_NOT_ENABLED",
+        });
+      }
+      return Promise.reject(new Error(`Unmocked GET ${path}`));
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <LoyaltyRewardPicker phone="0821234567" subtotalCents={10000} discountCents={0} selectedReward={null} onSelect={vi.fn()} />
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    await waitFor(() => expect(container.textContent).toBe(""));
+    expect(getMock).toHaveBeenCalledTimes(1); // only the customer lookup — /rewards never fires
+  });
+
+  it("shows nothing (not 'Couldn't load rewards.') when the customer lookup succeeds but the rewards fetch itself 409s with LOYALTY_NOT_ENABLED — a rare mid-session entitlement-revocation race, still a clean absence not an error", async () => {
+    getMock.mockImplementation((path: string) => {
+      if (path.startsWith("/v1/business/loyalty/customers/lookup")) return Promise.resolve(CUSTOMER);
+      if (path === "/v1/business/loyalty/rewards") {
+        return Promise.reject({
+          message: "The loyalty module is not enabled for this business",
+          status: 409,
+          code: "LOYALTY_NOT_ENABLED",
+        });
+      }
+      return Promise.reject(new Error(`Unmocked GET ${path}`));
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <LoyaltyRewardPicker phone="0821234567" subtotalCents={10000} discountCents={0} selectedReward={null} onSelect={vi.fn()} />
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(container.textContent).toBe(""));
+    expect(screen.queryByText("Couldn't load rewards.")).not.toBeInTheDocument();
+  });
+
+  it("shows 'Couldn't load rewards.' when the rewards fetch fails with an unrelated error (genuine failure, not entitlement)", async () => {
+    getMock.mockImplementation((path: string) => {
+      if (path.startsWith("/v1/business/loyalty/customers/lookup")) return Promise.resolve(CUSTOMER);
+      if (path === "/v1/business/loyalty/rewards") {
+        return Promise.reject({ message: "An unexpected error occurred. Please try again or contact support.", status: 500, code: "INTERNAL_SERVER_ERROR" });
+      }
+      return Promise.reject(new Error(`Unmocked GET ${path}`));
+    });
+    renderPickerRaw();
+    await screen.findByText("Couldn't load rewards.");
+  });
 });
+
+function renderPickerRaw() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <LoyaltyRewardPicker phone="0821234567" subtotalCents={10000} discountCents={0} selectedReward={null} onSelect={vi.fn()} />
+    </QueryClientProvider>
+  );
+}

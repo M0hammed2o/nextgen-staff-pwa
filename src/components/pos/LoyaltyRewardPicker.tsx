@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { lookupLoyaltyCustomer, listLoyaltyRewards } from "@/lib/loyalty";
+import { lookupLoyaltyCustomer, listLoyaltyRewards, isLoyaltyNotEnabledError } from "@/lib/loyalty";
 import { looksLikeSaPhoneNumber } from "@/lib/phone";
 import { cn, formatCurrency } from "@/lib/utils";
 import type { LoyaltyRewardResponse } from "@/types";
@@ -103,6 +103,13 @@ export default function LoyaltyRewardPicker({ phone, subtotalCents, discountCent
     return <p className="text-xs text-muted-foreground">Loading rewards…</p>;
   }
   if (rewardsQuery.isError) {
+    // A 409 LOYALTY_NOT_ENABLED here means the platform entitlement was
+    // revoked in the narrow window between the customer lookup succeeding
+    // (which gates this query) and this fetch firing — the same clean
+    // absence as everywhere else in the loyalty path, not a real failure.
+    // See src/lib/loyalty.ts::isLoyaltyNotEnabledError and KNOWN_BUGS.md
+    // BUG-0107/BUG-0108.
+    if (isLoyaltyNotEnabledError(rewardsQuery.error)) return null;
     return <p className="text-xs text-muted-foreground">Couldn't load rewards.</p>;
   }
 

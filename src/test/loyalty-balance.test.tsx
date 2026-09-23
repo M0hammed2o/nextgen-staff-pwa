@@ -12,12 +12,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
  * that unblocked it — corrected 2026-09-23; this docstring previously
  * cited the wrong bug number, BUG-0102, which documents an unrelated
  * order-number-sequence defect). This file's own tests stay scoped to the
- * two real hazards LoyaltyBalance.tsx itself owns:
+ * hazards LoyaltyBalance.tsx itself owns:
  *   1. The lookup CREATES a customer as a side effect — it must never fire
  *      for a phone number the cashier hasn't finished typing.
- *   2. A 404 (loyalty not enabled for this business) must be a silent,
- *      clean absence, distinct from a genuine failure (network/5xx), which
- *      must still be visibly reported rather than swallowed.
+ *   2. A 404 (no programme configured) OR a 409 LOYALTY_NOT_ENABLED (the
+ *      `Business.loyalty_enabled` platform entitlement gate, migration
+ *      0051 — KNOWN_BUGS.md BUG-0107/BUG-0108, fixed 2026-09-23) must both
+ *      be a silent, clean absence, distinct from a genuine failure
+ *      (network/5xx/an unrelated 409), which must still be visibly
+ *      reported rather than swallowed.
  */
 
 const getMock = vi.fn();
@@ -109,9 +112,35 @@ describe("LoyaltyBalance — 404 (loyalty not enabled) is a clean absence, not a
   });
 });
 
+describe("LoyaltyBalance — 409 LOYALTY_NOT_ENABLED (platform entitlement gate) is also a clean absence, not an error (BUG-0108)", () => {
+  it("shows nothing, and no error text, when the lookup 409s with LOYALTY_NOT_ENABLED — most POS-only/Operations-only tenants hit this on every phone number typed", async () => {
+    getMock.mockRejectedValue({
+      message: "The loyalty module is not enabled for this business",
+      status: 409,
+      code: "LOYALTY_NOT_ENABLED",
+    });
+    const { container } = renderBalance("0821234567");
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(container.textContent).toBe(""));
+    expect(screen.queryByText(/Couldn't check/)).not.toBeInTheDocument();
+  });
+});
+
 describe("LoyaltyBalance — a genuine failure is reported, not silently swallowed", () => {
   it("shows an error message for a non-404 failure (network/5xx)", async () => {
     getMock.mockRejectedValue({ message: "Could not reach the server", status: 0, noResponse: true });
+    renderBalance("0821234567");
+    await screen.findByText("Couldn't check loyalty balance.");
+  });
+
+  it("shows an error message for an UNRELATED 409 (not LOYALTY_NOT_ENABLED) rather than guessing it's an entitlement gap", async () => {
+    getMock.mockRejectedValue({ message: "Till is closed", status: 409, code: "TILL_CLOSED" });
+    renderBalance("0821234567");
+    await screen.findByText("Couldn't check loyalty balance.");
+  });
+
+  it("shows an error message for a genuine 500", async () => {
+    getMock.mockRejectedValue({ message: "An unexpected error occurred. Please try again or contact support.", status: 500, code: "INTERNAL_SERVER_ERROR" });
     renderBalance("0821234567");
     await screen.findByText("Couldn't check loyalty balance.");
   });

@@ -23,6 +23,16 @@ let refreshPromise: Promise<boolean> | null = null;
 export interface ApiFetchError {
   message: string;
   status: number;
+  /**
+   * The backend's machine-readable error code (`{ error: { code, message,
+   * details } }` — backend/app/core/errors.py's `AppError`/`ErrorDetail`),
+   * when the response body was parseable JSON in that shape. Callers that
+   * need to distinguish one specific failure from another same-status
+   * failure (e.g. a 409 `LOYALTY_NOT_ENABLED` entitlement gate vs some
+   * other unrelated 409 conflict) should match on this, not on `status`
+   * alone or on `message` text — see src/lib/loyalty.ts.
+   */
+  code?: string;
   noResponse?: boolean;
 }
 
@@ -142,10 +152,12 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     let message = "Request failed";
+    let code: string | undefined;
     try {
       const body = await res.json();
       // Backend returns { error: { code, message, details } } — parse nested format
       message = body?.error?.message || body?.detail || body?.message || message;
+      code = typeof body?.error?.code === "string" ? body.error.code : undefined;
       console.error(`API ${res.status}:`, body?.error || body);
     } catch (parseError) {
       // Response body is not JSON (e.g. empty 500 from a proxy). Log for Sentry.
@@ -153,7 +165,7 @@ export async function apiFetch<T>(
     }
     // A response WAS received here (even if not `ok`) — this is a definite
     // rejection, never `noResponse`.
-    throw { message, status: res.status } as ApiFetchError;
+    throw { message, status: res.status, code } as ApiFetchError;
   }
 
   if (res.status === 204) return {} as T;
