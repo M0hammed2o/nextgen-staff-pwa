@@ -23,11 +23,12 @@ interface Props {
  *
  * Reward SELECTION lives in the sibling `LoyaltyRewardPicker.tsx`
  * (2026-09-23) — `GET /v1/business/loyalty/rewards` now exposes
- * `value_cents`, closing the gap that used to block a reward picker
- * (formerly KNOWN_BUGS.md BUG-0102, now fixed on both backend and
- * frontend). This component's own job stays unchanged and narrow: it only
- * ever displays the balance/tier text below, and makes no write call —
- * CartPanel renders it directly above `LoyaltyRewardPicker`.
+ * `value_cents`, closing the gap that used to block a reward picker (see
+ * KNOWN_BUGS.md BUG-0104 — NOT BUG-0102, which this file previously and
+ * incorrectly cited; BUG-0102 is an unrelated order-number-sequence bug).
+ * This component's own job stays unchanged and narrow: it only ever
+ * displays the balance/tier text below, and makes no write call — CartPanel
+ * renders it directly above `LoyaltyRewardPicker`.
  */
 export default function LoyaltyBalance({ phone }: Props) {
   const [debounced, setDebounced] = useState(phone);

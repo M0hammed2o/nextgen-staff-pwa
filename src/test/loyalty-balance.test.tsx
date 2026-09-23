@@ -5,13 +5,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 /**
  * LoyaltyBalance.tsx — the till's loyalty-points display, wired to
- * CartPanel's existing "Phone (for loyalty)" field. See that component's
- * own docstring and KNOWN_BUGS.md BUG-0102 for why reward
- * SELECTION/redemption is deliberately NOT built or tested here: the
- * reward catalogue's `value_cents` is never exposed by the backend's
- * rewards-list endpoint, so no reward can be told apart from a
- * manual-handover-only one from this frontend today. These tests instead
- * cover the two real hazards this component does own:
+ * CartPanel's existing "Phone (for loyalty)" field. Reward SELECTION now
+ * lives in the sibling LoyaltyRewardPicker.tsx (see
+ * loyalty-reward-picker.test.tsx and pos-loyalty-checkout.test.tsx for its
+ * coverage; KNOWN_BUGS.md BUG-0104 for the backend value_cents-exposure fix
+ * that unblocked it — corrected 2026-09-23; this docstring previously
+ * cited the wrong bug number, BUG-0102, which documents an unrelated
+ * order-number-sequence defect). This file's own tests stay scoped to the
+ * two real hazards LoyaltyBalance.tsx itself owns:
  *   1. The lookup CREATES a customer as a side effect — it must never fire
  *      for a phone number the cashier hasn't finished typing.
  *   2. A 404 (loyalty not enabled for this business) must be a silent,

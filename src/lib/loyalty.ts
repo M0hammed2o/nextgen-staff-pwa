@@ -23,7 +23,7 @@ import type { CustomerLoyaltyResponse, LoyaltyRewardResponse } from "@/types";
  *
  * Reward SELECTION now lives in `listLoyaltyRewards()` below and
  * `src/components/pos/LoyaltyRewardPicker.tsx` (2026-09-23, closing
- * KNOWN_BUGS.md BUG-0102) — `LoyaltyRewardResponse.value_cents` is exposed
+ * KNOWN_BUGS.md BUG-0104) — `LoyaltyRewardResponse.value_cents` is exposed
  * by the backend now, so a reward can honestly be shown as till-redeemable.
  * This function still only ever reads the balance; it never redeems
  * anything — redemption happens exclusively via
