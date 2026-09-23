@@ -32,12 +32,20 @@ interface Props {
   onConfirm: (payload: ConfirmPayload) => void;
   isSubmitting: boolean;
   errorMessage: string | null;
+  /**
+   * A selected loyalty reward's PREVIEW discount, for the cashier's benefit
+   * only — `totalCents` above already has it netted in. The backend's
+   * committed order (never this) is the only real figure; see
+   * LoyaltyRewardPicker.tsx's docstring for why this can never be trusted
+   * as the actual applied amount.
+   */
+  loyaltyRewardPreview?: { name: string; discountCents: number } | null;
 }
 
 type Step = "method" | "cash" | "card" | "other";
 
 export default function PaymentDialog({
-  open, onClose, totalCents, posSettings, onConfirm, isSubmitting, errorMessage,
+  open, onClose, totalCents, posSettings, onConfirm, isSubmitting, errorMessage, loyaltyRewardPreview = null,
 }: Props) {
   const [step, setStep] = useState<Step>("method");
   const [cashInput, setCashInput] = useState("");
@@ -86,6 +94,12 @@ export default function PaymentDialog({
           <span className="text-sm text-muted-foreground">Total due</span>
           <span className="text-xl font-bold text-foreground">{formatCurrency(totalCents)}</span>
         </div>
+        {loyaltyRewardPreview && (
+          <p className="text-center text-xs text-muted-foreground">
+            Includes {loyaltyRewardPreview.name} (-{formatCurrency(loyaltyRewardPreview.discountCents)}) · preview,
+            confirmed at checkout
+          </p>
+        )}
 
         {step === "method" && (
           <div className="space-y-2">

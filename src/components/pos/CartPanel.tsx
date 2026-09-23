@@ -1,9 +1,10 @@
 import { Minus, Plus, Trash2 } from "lucide-react";
-import type { CartLine, POSSettings } from "@/types";
+import type { CartLine, LoyaltyRewardResponse, POSSettings } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
 import LoyaltyBalance from "./LoyaltyBalance";
+import LoyaltyRewardPicker, { previewLoyaltyDiscountCents } from "./LoyaltyRewardPicker";
 
 export type OrderMode = "PICKUP" | "DELIVERY" | "DINE_IN";
 
@@ -37,6 +38,8 @@ interface Props {
   onDiscountRandChange: (v: string) => void;
   discountReason: string;
   onDiscountReasonChange: (v: string) => void;
+  loyaltyReward: LoyaltyRewardResponse | null;
+  onLoyaltyRewardChange: (reward: LoyaltyRewardResponse | null) => void;
   tillOpen: boolean;
   errorMessage: string | null;
   onCheckout: () => void;
@@ -51,12 +54,17 @@ export default function CartPanel({
   customerPhone, onCustomerPhoneChange,
   discountRand, onDiscountRandChange,
   discountReason, onDiscountReasonChange,
+  loyaltyReward, onLoyaltyRewardChange,
   tillOpen, errorMessage, onCheckout,
 }: Props) {
   const subtotalCents = lines.reduce((sum, l) => sum + lineTotalCents(l), 0);
   const discountCents = Math.round((parseFloat(discountRand || "0") || 0) * 100);
+  // PREVIEW ONLY — see LoyaltyRewardPicker.tsx's docstring. The committed
+  // order's own loyalty_discount_cents (from the backend response) is the
+  // only real figure; this is purely so the cashier isn't flying blind.
+  const loyaltyDiscountCents = previewLoyaltyDiscountCents(loyaltyReward, subtotalCents, discountCents);
   const deliveryFeeCents = orderMode === "DELIVERY" ? (posSettings?.delivery_fee_cents ?? 0) : 0;
-  const estimatedTotalCents = Math.max(0, subtotalCents - discountCents) + deliveryFeeCents;
+  const estimatedTotalCents = Math.max(0, subtotalCents - discountCents - loyaltyDiscountCents) + deliveryFeeCents;
 
   const tableNumberRequired = orderMode === "DINE_IN" && !!posSettings?.table_number_required;
   const canCheckout = lines.length > 0 && tillOpen && (!tableNumberRequired || tableNumber.trim().length > 0);
@@ -187,9 +195,14 @@ export default function CartPanel({
                   {...customerPhoneTouch.fieldProps}
                 />
               </div>
-              {/* Balance-only today — see LoyaltyBalance.tsx for why reward
-                  redemption isn't wired up here yet (KNOWN_BUGS.md BUG-0102). */}
               <LoyaltyBalance phone={customerPhone} />
+              <LoyaltyRewardPicker
+                phone={customerPhone}
+                subtotalCents={subtotalCents}
+                discountCents={discountCents}
+                selectedReward={loyaltyReward}
+                onSelect={onLoyaltyRewardChange}
+              />
             </div>
 
             {/* Discount (optional) */}
@@ -236,6 +249,12 @@ export default function CartPanel({
               <div className="flex items-center justify-between text-muted-foreground">
                 <span>Discount</span>
                 <span>-{formatCurrency(discountCents)}</span>
+              </div>
+            )}
+            {loyaltyReward && (
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>{loyaltyReward.name} (preview)</span>
+                <span>-{formatCurrency(loyaltyDiscountCents)}</span>
               </div>
             )}
             {deliveryFeeCents > 0 && (

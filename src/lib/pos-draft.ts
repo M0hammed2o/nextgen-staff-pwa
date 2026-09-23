@@ -47,6 +47,17 @@ export type PosDraftSubmission =
   | { status: "idle" }
   | { status: "in_flight"; payload: POSOrderCreateRequest; idempotencyKey: string; startedAt: number };
 
+// DELIBERATELY NO loyaltyReward field here (2026-09-23, till reward
+// redemption feature). A pending reward SELECTION (as opposed to one
+// already embedded in a frozen `submission.payload` below, which is fine —
+// that is a request that was already sent, not a live pick) is a live UI
+// convenience, not a committed fact worth surviving a reload: restoring a
+// stale pick risks silently re-attaching a reward to a DIFFERENT cart or
+// customer than it was originally checked against hours earlier (see
+// DRAFT_MAX_AGE_MS), which is exactly the hazard this feature's spec
+// warns against. Safety over convenience — Pos.tsx always starts a
+// restored draft with no reward selected and requires the cashier to
+// re-pick. Do not add this field without re-reading that reasoning.
 export interface PosDraftV1 {
   version: 1;
   savedAt: number;

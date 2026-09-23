@@ -3,12 +3,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import type { ApiFetchError } from "@/lib/api";
 import type {
-  CartLine, MenuCategoryEntry, MenuItemEntry, Order, POSOrderCreateRequest, POSPaymentMethod, POSSettings, TillSession,
+  CartLine, LoyaltyRewardResponse, MenuCategoryEntry, MenuItemEntry, Order, POSOrderCreateRequest, POSPaymentMethod,
+  POSSettings, TillSession,
 } from "@/types";
 import type { ReceiptDocument } from "@/types/receipt";
 import { fetchReceiptDocument } from "@/lib/receipts";
 import ItemOptionsDialog from "@/components/pos/ItemOptionsDialog";
 import CartPanel, { lineTotalCents, type OrderMode } from "@/components/pos/CartPanel";
+import { previewLoyaltyDiscountCents } from "@/components/pos/LoyaltyRewardPicker";
 import PaymentDialog from "@/components/pos/PaymentDialog";
 import CashupDialog from "@/components/pos/CashupDialog";
 import CustomerReceipt, { printCustomerReceipt } from "@/components/CustomerReceipt";
@@ -51,6 +53,10 @@ export default function Pos() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [discountRand, setDiscountRand] = useState("");
   const [discountReason, setDiscountReason] = useState("");
+  // The cashier's current reward pick, if any — see LoyaltyRewardPicker.tsx
+  // for the selection/filtering UI and DRAFT-PERSISTENCE DECISION below for
+  // why this is never written to pos-draft.ts.
+  const [loyaltyReward, setLoyaltyReward] = useState<LoyaltyRewardResponse | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -125,6 +131,23 @@ export default function Pos() {
     setDiscountReason(draft.discountReason);
     setIdempotencyKey(draft.idempotencyKey);
     setSubmissionState(draft.submission);
+    // DRAFT-PERSISTENCE DECISION (loyalty reward selection): deliberately
+    // NEVER restored — PosDraftV1/PosDraftFields (pos-draft.ts) carries no
+    // loyaltyReward field at all, on purpose. A restored draft can be
+    // hours old (see DRAFT_MAX_AGE_MS) and the "in progress" pick here is a
+    // live UI convenience, not a committed fact about the sale the way the
+    // cart/phone/discount are — restoring a stale reward selection risks
+    // silently re-attaching a reward to a DIFFERENT set of cart lines (the
+    // very hazard this feature's spec calls out), or one the customer's
+    // balance can no longer actually afford by the time the till reloads.
+    // Safety over convenience: always start unselected and make the
+    // cashier re-pick, exactly like a resend from a frozen in-flight
+    // payload is the ONLY thing allowed to carry an already-attached
+    // reward through a reload (see submissionState.payload, which DOES
+    // legitimately embed loyalty_reward_id once a checkout was actually
+    // sent — that's a different, already-submitted request, not a live
+    // pick).
+    setLoyaltyReward(null);
 
     if (validLines.length > 0 || draft.submission.status === "in_flight") {
       setDraftNotice(
@@ -156,6 +179,38 @@ export default function Pos() {
     discountRand, discountReason, idempotencyKey, submissionState,
     user?.business_id, user?.id,
   ]);
+
+  // ── Loyalty reward selection safety — clear on anything that could make
+  //    a stale pick apply to the wrong customer/cart/session. Each of these
+  //    is one of the consequences this feature's spec explicitly calls
+  //    out; "checkout succeeding" is covered by resetForNextSale() below,
+  //    "cashier logging out" needs no handling here (this is in-memory
+  //    React state that dies with the component on logout/navigation), and
+  //    "cart restoration from pos-draft.ts" is covered above (never
+  //    restored in the first place). ────────────────────────────────────
+  //
+  // Customer phone changed (including being cleared, or still mid-typing)
+  // — a reward is tied to the specific customer it was checked against;
+  // ANY change invalidates that, not just a change to a "different" number.
+  useEffect(() => {
+    setLoyaltyReward(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerPhone]);
+
+  // Cart emptied (every line removed, or resetForNextSale, which also
+  // clears it directly) — a reward must never silently carry over onto
+  // whatever gets rung up next.
+  useEffect(() => {
+    if (cart.length === 0) setLoyaltyReward(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.length]);
+
+  // Till session changed (closed and a new one opened) — a reward checked
+  // against one till session's context must not silently ride into another.
+  useEffect(() => {
+    setLoyaltyReward(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [till?.id]);
 
   const visibleItems = useMemo(() => {
     let active = items.filter((i) => i.is_active);
@@ -257,6 +312,7 @@ export default function Pos() {
     setCustomerPhone("");
     setDiscountRand("");
     setDiscountReason("");
+    setLoyaltyReward(null);
     setIdempotencyKey(newIdempotencyKey());
     setErrorMessage(null);
     setSubmissionState({ status: "idle" });
@@ -267,8 +323,14 @@ export default function Pos() {
 
   const subtotalCents = cart.reduce((sum, l) => sum + lineTotalCents(l), 0);
   const discountCents = Math.round((parseFloat(discountRand || "0") || 0) * 100);
+  // PREVIEW ONLY — see LoyaltyRewardPicker.tsx's docstring. Computed with
+  // the exact same clamp formula the backend uses, purely so the cashier
+  // isn't flying blind before Pay; the committed order's own
+  // loyalty_discount_cents (from the backend response) is the only real
+  // figure this app ever prints on a receipt or "Sale complete" screen.
+  const loyaltyDiscountPreviewCents = previewLoyaltyDiscountCents(loyaltyReward, subtotalCents, discountCents);
   const deliveryFeeCents = orderMode === "DELIVERY" ? (posSettings?.delivery_fee_cents ?? 0) : 0;
-  const estimatedTotalCents = Math.max(0, subtotalCents - discountCents) + deliveryFeeCents;
+  const estimatedTotalCents = Math.max(0, subtotalCents - discountCents - loyaltyDiscountPreviewCents) + deliveryFeeCents;
 
   // Fetches the backend's authoritative receipt document for a just-placed
   // order and prints THAT — never a locally-rebuilt slip (see BUG-0045).
@@ -341,6 +403,12 @@ export default function Pos() {
       customer_phone: customerPhone.trim() || null,
       discount_cents: discountCents > 0 ? discountCents : undefined,
       discount_reason: discountCents > 0 ? (discountReason.trim() || null) : null,
+      // The backend requires customer_phone whenever this is set
+      // (routes_pos.py::POSOrderCreateRequest.validate_loyalty_redemption)
+      // — loyaltyReward is already cleared the instant customerPhone
+      // changes (see the effects above), but this guard is cheap insurance
+      // against ever sending a redemption with no phone attached.
+      loyalty_reward_id: loyaltyReward && customerPhone.trim() ? loyaltyReward.id : undefined,
       items: cart.map((line) => ({
         menu_item_id: line.menuItemId,
         quantity: line.quantity,
@@ -461,6 +529,8 @@ export default function Pos() {
       onDiscountRandChange={setDiscountRand}
       discountReason={discountReason}
       onDiscountReasonChange={setDiscountReason}
+      loyaltyReward={loyaltyReward}
+      onLoyaltyRewardChange={setLoyaltyReward}
       tillOpen={tillOpen}
       errorMessage={null}
       onCheckout={() => setPaymentOpen(true)}
@@ -707,6 +777,16 @@ export default function Pos() {
                   Cash received {formatCurrency(lastOrder.cash_tendered_cents)} · Change {formatCurrency(lastOrder.change_due_cents)}
                 </p>
               )}
+              {/* Sourced ONLY from the backend's own committed order — never
+                  recomputed locally. This is the real, applied redemption,
+                  not the pre-checkout preview shown earlier in CartPanel/
+                  PaymentDialog. */}
+              {lastOrder.loyalty_reward_id && (
+                <p className="text-sm text-muted-foreground">
+                  {lastOrder.loyalty_reward_name ?? "Reward"} redeemed · -{formatCurrency(lastOrder.loyalty_discount_cents ?? 0)}
+                  {lastOrder.loyalty_points_redeemed ? ` · ${lastOrder.loyalty_points_redeemed} pts` : ""}
+                </p>
+              )}
             </div>
             {printFailed && (
               <div className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-center">
@@ -821,6 +901,9 @@ export default function Pos() {
         onConfirm={handleConfirmPayment}
         isSubmitting={isSubmitting}
         errorMessage={errorMessage}
+        loyaltyRewardPreview={
+          loyaltyReward ? { name: loyaltyReward.name, discountCents: loyaltyDiscountPreviewCents } : null
+        }
       />
 
       {lastOrder && (
