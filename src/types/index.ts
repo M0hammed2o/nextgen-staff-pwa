@@ -130,6 +130,18 @@ export interface Order {
   cancelled_reason: string | null;
   created_at: string;
   updated_at: string;
+  // Loyalty redemption snapshot (migration 0050) — mirrors
+  // backend/app/api/v1/routes_orders.py::OrderResponse exactly. Always
+  // present on a response from a backend that has run this migration;
+  // typed nullable/optional here because a pre-migration cached response
+  // shape is not something this frontend should assume away. Never
+  // rewritten by refund/void (DECISION-0034) — these are the immutable
+  // financial snapshot of what was actually redeemed at checkout, the only
+  // honest source for a receipt or a "Sale complete" summary.
+  loyalty_discount_cents?: number | null;
+  loyalty_reward_id?: string | null;
+  loyalty_points_redeemed?: number | null;
+  loyalty_reward_name?: string | null;
 }
 
 // Backend valid statuses
@@ -266,6 +278,13 @@ export interface POSOrderCreateRequest {
   customer_phone?: string | null;
   discount_cents?: number;
   discount_reason?: string | null;
+  // A LoyaltyReward to redeem against this sale (backend/app/api/v1/routes_pos.py
+  // ::POSOrderCreateRequest.loyalty_reward_id). The backend requires
+  // customer_phone AND idempotency_key to both be set whenever this is —
+  // see Pos.tsx::handleConfirmPayment, which only ever sets this alongside
+  // both. The backend is the only thing that ever validates/applies it;
+  // this frontend never computes the resulting discount independently.
+  loyalty_reward_id?: string | null;
   payment_method: POSPaymentMethod;
   cash_tendered_cents?: number | null;
   payment_reference?: string | null;
@@ -462,6 +481,24 @@ export interface CustomerLoyaltyResponse {
   phone_number: string | null;
   loyalty_points_balance: number;
   loyalty_tier: string;
+}
+
+// GET /v1/business/loyalty/rewards — mirrors
+// backend/app/api/v1/routes_loyalty.py::LoyaltyRewardResponse exactly.
+// STAFF-or-above (require_staff_or_above) — the route itself already
+// filters to `is_active == true` server-side (routes_loyalty.py::list_rewards),
+// so `is_active` here is defensive-only from the frontend's point of view,
+// never the only thing standing between a cashier and an inactive reward.
+// `value_cents` is nullable: NULL means "not redeemable at the till, hand
+// it over manually" (DECISIONS.md DECISION-0038) — see
+// src/components/pos/LoyaltyRewardPicker.tsx for how this is filtered.
+export interface LoyaltyRewardResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  points_cost: number;
+  is_active: boolean;
+  value_cents: number | null;
 }
 
 // One line in the till's in-progress cart, before submission. Prices here

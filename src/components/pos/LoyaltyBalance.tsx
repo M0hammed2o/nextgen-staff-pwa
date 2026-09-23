@@ -21,19 +21,13 @@ interface Props {
  * so calling it for every partially-typed digit would write spurious
  * customer rows for numbers the cashier never finished entering.
  *
- * Reward redemption is deliberately NOT built here or anywhere else in this
- * app yet — see KNOWN_BUGS.md BUG-0102 and WORKLOG.md 2026-09-23. The
- * reward catalogue's `value_cents` (which decides whether a reward is
- * redeemable at the till at all, and for how much) is never exposed by
- * `GET /v1/business/loyalty/rewards` and cannot be set through any
- * create/update endpoint either — every reward in every seeded/real
- * business has `value_cents = NULL` today, meaning the backend would
- * reject a redemption attempt for ANY reward with
- * REWARD_NOT_REDEEMABLE_AT_TILL. Building a reward picker against that gap
- * would let a cashier select a reward and be rejected every single time —
- * exactly the "shipped a control for a backend field that was never
- * exposed" mistake this feature was explicitly built to avoid repeating.
- * This component only ever displays the balance; it makes no write call.
+ * Reward SELECTION lives in the sibling `LoyaltyRewardPicker.tsx`
+ * (2026-09-23) — `GET /v1/business/loyalty/rewards` now exposes
+ * `value_cents`, closing the gap that used to block a reward picker
+ * (formerly KNOWN_BUGS.md BUG-0102, now fixed on both backend and
+ * frontend). This component's own job stays unchanged and narrow: it only
+ * ever displays the balance/tier text below, and makes no write call —
+ * CartPanel renders it directly above `LoyaltyRewardPicker`.
  */
 export default function LoyaltyBalance({ phone }: Props) {
   const [debounced, setDebounced] = useState(phone);

@@ -1,6 +1,6 @@
 import { apiClient } from "./api";
 import type { ApiFetchError } from "./api";
-import type { CustomerLoyaltyResponse } from "@/types";
+import type { CustomerLoyaltyResponse, LoyaltyRewardResponse } from "@/types";
 
 /**
  * Look up a walk-in customer's loyalty points balance/tier by phone number,
@@ -21,12 +21,17 @@ import type { CustomerLoyaltyResponse } from "@/types";
  *    failure (network, validation, 5xx) still throws so the caller can
  *    show a real error.
  *
- * Reward redemption is NOT wired here — see KNOWN_BUGS.md BUG-0102. The
- * reward catalogue's `value_cents` (which determines whether a reward is
- * redeemable at the till and for how much) is not exposed by
- * LoyaltyRewardResponse and cannot be set via LoyaltyRewardCreate/Update
- * either, so no reward can honestly be shown as till-redeemable from this
- * frontend today.
+ * Reward SELECTION now lives in `listLoyaltyRewards()` below and
+ * `src/components/pos/LoyaltyRewardPicker.tsx` (2026-09-23, closing
+ * KNOWN_BUGS.md BUG-0102) — `LoyaltyRewardResponse.value_cents` is exposed
+ * by the backend now, so a reward can honestly be shown as till-redeemable.
+ * This function still only ever reads the balance; it never redeems
+ * anything — redemption happens exclusively via
+ * `POSOrderCreateRequest.loyalty_reward_id` at POS checkout
+ * (`backend/app/api/v1/routes_pos.py::create_pos_order`), never via a
+ * separate call from this frontend, so the backend's own
+ * subtotal/points/idempotency validation is always the thing that decides
+ * whether a redemption actually happens.
  */
 export async function lookupLoyaltyCustomer(phone: string): Promise<CustomerLoyaltyResponse | null> {
   try {
@@ -38,4 +43,16 @@ export async function lookupLoyaltyCustomer(phone: string): Promise<CustomerLoya
     if (apiErr?.status === 404) return null;
     throw err;
   }
+}
+
+/**
+ * The reward catalogue available for till redemption
+ * (backend/app/api/v1/routes_loyalty.py::list_rewards, STAFF-or-above).
+ * The route already filters to `is_active == true` server-side — this
+ * function does no additional filtering; see LoyaltyRewardPicker.tsx for
+ * the affordability/value filtering that decides which of these a cashier
+ * may actually select.
+ */
+export function listLoyaltyRewards(): Promise<LoyaltyRewardResponse[]> {
+  return apiClient.get<LoyaltyRewardResponse[]>("/v1/business/loyalty/rewards");
 }
