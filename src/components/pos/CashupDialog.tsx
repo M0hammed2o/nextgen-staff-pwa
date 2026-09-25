@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
 import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
+import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   open: boolean;
@@ -25,6 +26,7 @@ interface Props {
 export default function CashupDialog({ open, onClose }: Props) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const canClose = user?.role === "OWNER" || user?.role === "MANAGER";
 
   const [openingFloat, setOpeningFloat] = useState("");
@@ -36,6 +38,16 @@ export default function CashupDialog({ open, onClose }: Props) {
   const countedCashTouch = useTouchField({ value: countedCash, onChange: setCountedCash, layout: "CURRENCY" });
   const { close: closeTouchKeyboard } = useTouchKeyboardContext();
 
+  // Synchronous in-flight guard against a fast double-click/double-tap on
+  // "Open till" firing two POST /till/open requests. `openMutation.isPending`
+  // alone can't do this: it's state, and state updates only land on the next
+  // render, leaving a gap a fast double-click can land inside. A ref is
+  // mutated immediately, outside the render cycle, closing that gap (same
+  // pattern as the manager dashboard's OpeningStockPage `inFlightRef`). The
+  // backend's `uq_till_sessions_one_open_per_business` constraint (409
+  // TILL_ALREADY_OPEN) is the real backstop, not the first line of defense.
+  const openInFlightRef = useRef(false);
+
   const { data: current, isLoading } = useQuery({
     queryKey: ["till-current"],
     queryFn: () => apiClient.get<TillSession | null>("/v1/business/pos/till/current"),
@@ -44,18 +56,25 @@ export default function CashupDialog({ open, onClose }: Props) {
 
   const openMutation = useMutation({
     mutationFn: (body: TillOpenRequest) => apiClient.post<TillSession>("/v1/business/pos/till/open", body),
-    onSuccess: () => {
+    onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ["till-current"] });
       setOpeningFloat("");
       setError(null);
-      // The float field doesn't necessarily unmount here (the dialog stays
-      // open showing the now-empty form until the till-current refetch
-      // resolves and swaps to the close-till view) — close explicitly
-      // rather than relying only on unmount, or the keyboard is left open
-      // over a form the cashier is done with.
-      closeTouchKeyboard();
+      toast({
+        title: "Till opened",
+        description: `Opening float ${formatCurrency(session.opening_float_cents)}. Ready to ring up.`,
+      });
+      // The dialog is `open`-prop-controlled and stays mounted across opens
+      // (see BUG-0080) — a successful open must dismiss it explicitly via
+      // handleDialogClose(), which also closes the on-screen keyboard on
+      // this exit path, rather than leaving the cashier to dismiss it by
+      // hand over a form there's nothing left to do on.
+      handleDialogClose();
     },
     onError: (err) => setError((err as { message?: string })?.message ?? "Could not open the till"),
+    onSettled: () => {
+      openInFlightRef.current = false;
+    },
   });
 
   const closeMutation = useMutation({
@@ -72,12 +91,14 @@ export default function CashupDialog({ open, onClose }: Props) {
   });
 
   function handleOpenSubmit() {
+    if (openInFlightRef.current) return; // already submitting — ignore a fast double-click/tap
     const cents = Math.round(parseFloat(openingFloat || "0") * 100);
     if (isNaN(cents) || cents < 0) {
       setError("Enter a valid opening float");
       return;
     }
     setError(null);
+    openInFlightRef.current = true;
     openMutation.mutate({ opening_float_cents: cents });
   }
 

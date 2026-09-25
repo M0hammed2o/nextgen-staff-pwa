@@ -6,6 +6,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import BottomNav from "@/components/BottomNav";
 import TouchKeyboard from "@/components/TouchKeyboard";
+import { Toaster } from "@/components/ui/toaster";
 import Login from "@/pages/Login";
 import Welcome from "@/pages/Welcome";
 import LiveOrders from "@/pages/LiveOrders";
@@ -102,6 +103,7 @@ const App = () => (
         </Routes>
         <BottomNav />
         <TouchKeyboard />
+        <Toaster />
       </TouchKeyboardProvider>
       </BrowserRouter>
     </AuthProvider>
