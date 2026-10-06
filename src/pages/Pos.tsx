@@ -859,13 +859,23 @@ export default function Pos() {
                 reprint/retry, same as before. */}
             <div className="mt-5 space-y-2">
               <p className="text-center text-xs font-medium text-muted-foreground">Receipt</p>
-              {/* Truthful availability, decided BEFORE the cashier taps.
-                  Without this the only way to discover the module is off is
-                  to tap WhatsApp and watch the send return NOT_REQUESTED --
-                  which reads as a failure to a customer standing at the
-                  counter. This reflects the tenant's entitlement only; it is
-                  NOT a claim that Meta template approval is in place, which
-                  the send path reports on its own terms. */}
+              {/* Truthful availability, surfaced BEFORE the cashier taps --
+                  but the choice is LABELLED, never removed.
+                  
+                  An earlier version of this disabled WhatsApp/Both when the
+                  tenant lacked the entitlement. That broke a deliberate
+                  Commercial V1 contract: all four choices are offered, and an
+                  unentitled send is reported honestly as NOT_REQUESTED rather
+                  than refused (spec 14-D4b exists precisely to test that, and
+                  spec 13-D1b asserts all four are present). Disabling the
+                  option removed a path the product had deliberately kept open.
+                  
+                  So the annotation stays and the disabling goes: the cashier
+                  learns the module is off before tapping, and the existing,
+                  already-honest NOT_REQUESTED path remains available. This
+                  reflects the tenant's ENTITLEMENT only -- it is not a claim
+                  about Meta template approval, which only the send can
+                  establish. */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -877,9 +887,8 @@ export default function Pos() {
                 <button
                   type="button"
                   onClick={() => handleReceiptChoice("WHATSAPP")}
-                  disabled={!whatsappReceiptsAvailable}
                   title={whatsappReceiptsAvailable ? undefined : "WhatsApp receipts are not enabled for this restaurant"}
-                  className="flex h-16 flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-card text-sm font-medium text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-card"
+                  className="flex h-16 flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-card text-sm font-medium text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted"
                 >
                   <MessageCircle className="h-5 w-5" /> WhatsApp
                   {!whatsappReceiptsAvailable && (
@@ -889,9 +898,8 @@ export default function Pos() {
                 <button
                   type="button"
                   onClick={() => handleReceiptChoice("BOTH")}
-                  disabled={!whatsappReceiptsAvailable}
                   title={whatsappReceiptsAvailable ? undefined : "WhatsApp receipts are not enabled for this restaurant"}
-                  className="flex h-12 items-center justify-center rounded-xl border border-border bg-card text-sm font-medium text-foreground transition-colors duration-fast hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-card"
+                  className="flex h-12 items-center justify-center rounded-xl border border-border bg-card text-sm font-medium text-foreground transition-colors duration-fast hover:bg-muted active:bg-muted"
                 >
                   Both
                 </button>

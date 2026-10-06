@@ -191,18 +191,20 @@ describe("Pos receipt choice — truthful WhatsApp availability", () => {
     expect(screen.queryByText(/aren.t enabled for this restaurant/i)).toBeNull();
   });
 
-  it("does NOT offer WhatsApp when the business is not entitled, and says so plainly", async () => {
-    // The cashier must learn this BEFORE tapping. Previously the only way to
-    // find out was to send and watch it come back NOT_REQUESTED, which reads
-    // as a failure to a customer standing at the counter.
+  it("still OFFERS WhatsApp when not entitled, but says plainly that it is off", async () => {
+    // The cashier must learn this before tapping -- but the choice is LABELLED,
+    // not removed. Commercial V1 deliberately offers all four options and
+    // reports an unentitled send honestly as NOT_REQUESTED (spec 14-D4b);
+    // disabling the button removed a path the product had kept open on
+    // purpose, and broke spec 13-D1b, which asserts all four are present.
     POS_SETTINGS.digital_receipts_enabled = false;
     await ringUpAndPay();
 
-    expect((await screen.findByRole("button", { name: /WhatsApp/ })) as HTMLButtonElement).toBeDisabled();
-    expect((await screen.findByRole("button", { name: /^Both$/ })) as HTMLButtonElement).toBeDisabled();
+    expect((await screen.findByRole("button", { name: /WhatsApp/ })) as HTMLButtonElement).not.toBeDisabled();
+    expect((await screen.findByRole("button", { name: /^Both$/ })) as HTMLButtonElement).not.toBeDisabled();
+    // ...and the cashier is told, so the NOT_REQUESTED result is not a surprise.
     expect(screen.getByText(/aren.t enabled for this restaurant/i)).toBeInTheDocument();
 
-    // Printing is unaffected -- the sale is still fully serviceable.
     expect((await screen.findByRole("button", { name: /Print/ })) as HTMLButtonElement).not.toBeDisabled();
     expect((await screen.findByRole("button", { name: /No receipt/ })) as HTMLButtonElement).not.toBeDisabled();
   });
