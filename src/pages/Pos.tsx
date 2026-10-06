@@ -890,10 +890,14 @@ export default function Pos() {
                   title={whatsappReceiptsAvailable ? undefined : "WhatsApp receipts are not enabled for this restaurant"}
                   className="flex h-16 flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-card text-sm font-medium text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted"
                 >
+                  {/* Nothing but the icon and the word may live inside this
+                      button. An earlier version nested a "Not enabled" caption
+                      here, which made the button's text content
+                      "WhatsAppNot enabled" -- changing its ACCESSIBLE NAME and
+                      breaking spec 13-D1b, which enumerates the four receipt
+                      choices by name. The unavailability message belongs to
+                      the explanatory line below the grid, where it already is. */}
                   <MessageCircle className="h-5 w-5" /> WhatsApp
-                  {!whatsappReceiptsAvailable && (
-                    <span className="text-[10px] font-normal text-muted-foreground">Not enabled</span>
-                  )}
                 </button>
                 <button
                   type="button"
