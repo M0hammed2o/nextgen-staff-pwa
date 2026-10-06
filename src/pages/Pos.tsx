@@ -18,6 +18,8 @@ import ReceiptSendDialog from "@/components/pos/ReceiptSendDialog";
 import EmptyState from "@/components/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
+import { useBrand } from "@/lib/brand-provider";
+import { RestaurantMark } from "@/components/RestaurantIdentity";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
@@ -33,6 +35,11 @@ function newIdempotencyKey(): string {
 export default function Pos() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  // Restaurant identity for the header. Falls back to the saved business name
+  // and finally to a neutral product name, so an unbranded tenant still gets a
+  // deliberate header rather than an empty space.
+  const { displayName, branchName } = useBrand();
+  const brandName = displayName?.trim() || user?.business_name || "NextGen Restaurant OS";
   const { close: closeTouchKeyboard } = useTouchKeyboardContext();
   // Persistent side-cart (landscape POS terminals) vs mobile-style full-width
   // cart dialog (any portrait viewport, whatever its width) — see
@@ -565,12 +572,29 @@ export default function Pos() {
       )}
     >
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top">
-        <div className="flex items-center justify-between px-4 py-4">
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Till</h1>
-            <p className="text-xs text-muted-foreground">
-              {tillOpen ? "Tap an item to add it to the order" : "Open the till to start selling"}
-            </p>
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          {/* The restaurant leads, the screen name follows: a cashier should
+              see whose till this is, not which SaaS product it belongs to.
+              RestaurantMark degrades logo -> monogram -> neutral, so an
+              unbranded tenant still gets a deliberate header. The <h1>"Till"
+              is kept as a sibling rather than replaced -- it is the screen's
+              accessible name and existing specs locate the page by it. */}
+          <div className="flex min-w-0 items-center gap-3">
+            <RestaurantMark size="md" />
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="truncate text-sm font-semibold leading-tight text-foreground">
+                  {brandName}
+                </span>
+                {branchName ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">{branchName}</span>
+                ) : null}
+              </div>
+              <h1 className="text-lg font-semibold leading-tight tracking-tight text-foreground">Till</h1>
+              <p className="text-xs text-muted-foreground">
+                {tillOpen ? "Tap an item to add it to the order" : "Open the till to start selling"}
+              </p>
+            </div>
           </div>
           <button
             onClick={() => setCashupOpen(true)}
