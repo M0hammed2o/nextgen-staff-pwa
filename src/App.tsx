@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
+import { BrandProvider } from "@/lib/brand-provider";
+import { BrandSync } from "@/components/BrandSync";
 import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -31,6 +33,12 @@ const App = () => (
   <ErrorBoundary>
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+      {/* BrandProvider sits INSIDE AuthProvider (it reads the saved business)
+          but OUTSIDE the router, so the restaurant's colours are already on
+          <html> before the first route renders -- including /login, which is
+          the PIN screen a cashier sees at the start of every shift. */}
+      <BrandProvider>
+      <BrandSync />
       <BrowserRouter>
       <TouchKeyboardProvider>
         <Routes>
@@ -106,6 +114,7 @@ const App = () => (
         <Toaster />
       </TouchKeyboardProvider>
       </BrowserRouter>
+      </BrandProvider>
     </AuthProvider>
   </QueryClientProvider>
   </ErrorBoundary>

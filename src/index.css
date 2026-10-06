@@ -3,108 +3,169 @@
 @tailwind utilities;
 
 @layer base {
-  /* Light theme (default). This is a till used for hours at a time under
-     bright kitchen/restaurant lighting, so several tokens are deliberately
-     pushed to higher contrast than the manager dashboard's equivalents
-     (`nextgen-insights-main/src/index.css`, the palette this was aligned
-     to) rather than copied verbatim — see WORKLOG.md for the full list of
-     deviations and why. `--radius` is also deliberately left larger
-     (0.75rem, vs the manager dashboard's 0.5rem) — bigger rounded corners
-     read better on the big touch tiles/buttons this app is built from. */
+  /* ── NextGen UI V2 — premium light theme ──────────────────────────────
+     Direction: warm off-white canvas, white surfaces, charcoal ink, and a
+     restaurant accent supplied at runtime. Deliberately NOT the previous
+     dark-blue SaaS palette (--primary was 207 80% 42% in all three apps).
+
+     The token NAMES are unchanged from the frozen Commercial V1 release on
+     purpose: all 49 shadcn/Radix primitives and every page already consume
+     them, so retuning values re-skins the whole application without editing
+     a single component. That is what keeps the verified V1 logic untouched.
+
+     --primary defaults to charcoal rather than a brand hue. A restaurant's
+     colour REPLACES it at runtime (see lib/brand.ts + BrandProvider), and a
+     tenant with no branding configured still gets a deliberate, premium
+     monochrome product rather than a half-applied theme.
+
+     Semantic colours (--success/--warning/--destructive) are NextGen's and
+     are never brand-driven: staff move between restaurants, and an error
+     must look like an error everywhere. */
   :root {
-    --background: 210 20% 96%;
-    --foreground: 220 25% 9%;
+    /* Canvas and surfaces */
+    --background: 60 11% 96%;        /* #F7F7F5 warm off-white */
+    --foreground: 0 0% 9%;           /* #171717 charcoal ink */
 
     --card: 0 0% 100%;
-    --card-foreground: 220 25% 9%;
+    --card-foreground: 0 0% 9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 9%;
+    --popover-foreground: 0 0% 9%;
 
-    --primary: 207 80% 42%;
+    /* Brand-driven at runtime; charcoal is the unbranded default. */
+    --primary: 0 0% 11%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 214 20% 91%;
-    --secondary-foreground: 220 25% 10%;
+    --secondary: 40 8% 93%;
+    --secondary-foreground: 0 0% 16%;
 
-    --muted: 214 20% 93%;
-    --muted-foreground: 215 18% 38%;
+    --muted: 40 8% 94%;
+    --muted-foreground: 30 4% 42%;
 
-    --accent: 207 80% 95%;
-    --accent-foreground: 207 80% 30%;
+    --accent: 40 8% 93%;
+    --accent-foreground: 0 0% 11%;
 
-    --destructive: 0 72% 51%;
+    /* Operational meaning — NextGen-controlled, never themeable. */
+    --destructive: 0 65% 46%;
     --destructive-foreground: 0 0% 100%;
-
-    --success: 142 72% 38%;
+    --success: 152 45% 32%;
     --success-foreground: 0 0% 100%;
-
-    --warning: 38 92% 42%;
+    --warning: 35 85% 40%;
     --warning-foreground: 0 0% 100%;
+    --info: 215 16% 40%;
+    --info-foreground: 0 0% 100%;
 
-    --border: 214 20% 82%;
-    --input: 214 20% 82%;
-    --ring: 207 80% 42%;
+    --border: 48 9% 89%;
+    --input: 48 9% 86%;
+    --ring: 0 0% 11%;
 
+    /* Larger than the dashboards (0.625rem): this app is built from big
+       touch tiles, where a slightly softer corner reads better at arm's
+       length. Carried forward from the frozen release deliberately. */
     --radius: 0.75rem;
 
+    /* ── Brand tokens — overwritten at runtime by BrandProvider ───────── */
+    --brand-primary: 0 0% 11%;
+    --brand-primary-hover: 0 0% 5%;
+    --brand-primary-active: 0 0% 0%;
+    --brand-primary-soft: 0 0% 95%;
+    --brand-primary-border: 0 0% 86%;
+    --brand-on-primary: 0 0% 100%;
+    --brand-ring: 0 0% 11%;
+    --brand-raw: 0 0% 11%;
+
+    /* Charts default to the brand, so analytics look intentional. */
+    --chart-1: 0 0% 11%;
+    --chart-2: 30 6% 45%;
+    --chart-3: 40 8% 72%;
+
+    /* ── Semantic aliases (the vocabulary the design system speaks) ─────
+       Mapped onto the shadcn tokens rather than duplicating values, so
+       there is exactly one source of truth per colour. */
+    --bg-app: var(--background);
+    --bg-surface: var(--card);
+    --bg-elevated: 0 0% 100%;
+
+    --text-primary: var(--foreground);
+    --text-secondary: 0 0% 16%;
+    --text-muted: var(--muted-foreground);
+
+    --border-default: var(--border);
+    --border-strong: 42 7% 80%;
+
+    /* Elevation: restrained, premium. Shadows carry hierarchy, not drama. */
+    --shadow-sm: 0 1px 2px 0 rgb(23 23 23 / 0.04), 0 1px 3px 0 rgb(23 23 23 / 0.06);
+    --shadow-md: 0 2px 4px -1px rgb(23 23 23 / 0.05), 0 4px 12px -2px rgb(23 23 23 / 0.08);
+    --shadow-lg: 0 8px 24px -4px rgb(23 23 23 / 0.10), 0 2px 8px -2px rgb(23 23 23 / 0.06);
+
+    --radius-sm: 0.375rem;
+    --radius-md: 0.625rem;
+    --radius-lg: 0.875rem;
+
+    /* Motion — fast enough that a till never waits on an animation. */
+    --motion-fast: 120ms;
+    --motion-base: 160ms;
+    --motion-slow: 220ms;
+
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 25% 10%;
-    --sidebar-primary: 207 80% 42%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 214 20% 93%;
-    --sidebar-accent-foreground: 220 25% 10%;
-    --sidebar-border: 214 20% 85%;
-    --sidebar-ring: 207 80% 42%;
+    --sidebar-foreground: 0 0% 9%;
+    --sidebar-primary: var(--brand-primary);
+    --sidebar-primary-foreground: var(--brand-on-primary);
+    --sidebar-accent: 40 8% 94%;
+    --sidebar-accent-foreground: 0 0% 11%;
+    --sidebar-border: 48 9% 89%;
+    --sidebar-ring: var(--brand-ring);
   }
 
-  /* Dark theme — not currently loaded by default (no toggle wires `.dark`
-     onto the document today; see WORKLOG.md), kept available for a possible
-     future setting. These are the app's previous default values, carried
-     over unchanged so nothing regresses if `.dark` is ever activated. */
+  /* Dark theme — a proper semantic theme, not an inversion. Very dark
+     charcoal with slightly elevated surfaces; no pure black, no pure white,
+     because an 8pm service on a bright till is exactly where eye strain
+     shows up. Not loaded by default: light is the intended experience and
+     nothing sets `.dark` today. */
   .dark {
-    --background: 220 40% 8%;
-    --foreground: 210 20% 92%;
+    --background: 30 3% 9%;
+    --foreground: 40 8% 92%;
 
-    --card: 220 35% 12%;
-    --card-foreground: 210 20% 92%;
+    --card: 30 3% 12%;
+    --card-foreground: 40 8% 92%;
 
-    --popover: 220 35% 14%;
-    --popover-foreground: 210 20% 92%;
+    --popover: 30 3% 13%;
+    --popover-foreground: 40 8% 92%;
 
-    --primary: 205 85% 50%;
-    --primary-foreground: 220 40% 4%;
+    --primary: 40 8% 92%;
+    --primary-foreground: 30 3% 9%;
 
-    --secondary: 220 30% 18%;
-    --secondary-foreground: 210 20% 88%;
+    --secondary: 30 3% 18%;
+    --secondary-foreground: 40 8% 90%;
 
-    --muted: 220 25% 16%;
-    --muted-foreground: 215 15% 55%;
+    --muted: 30 3% 17%;
+    --muted-foreground: 35 5% 62%;
 
-    --accent: 205 85% 50%;
-    --accent-foreground: 220 40% 4%;
+    --accent: 30 3% 18%;
+    --accent-foreground: 40 8% 92%;
 
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 20% 95%;
+    --destructive: 0 60% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 40% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35 75% 50%;
+    --warning-foreground: 30 3% 9%;
+    --info: 215 16% 60%;
+    --info-foreground: 30 3% 9%;
 
-    --success: 142 71% 45%;
-    --success-foreground: 220 40% 4%;
+    --border: 30 3% 22%;
+    --input: 30 3% 24%;
+    --ring: 40 8% 80%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 220 40% 4%;
+    --bg-elevated: 30 3% 15%;
+    --text-secondary: 40 8% 84%;
+    --border-strong: 30 3% 30%;
 
-    --border: 220 20% 20%;
-    --input: 220 20% 20%;
-    --ring: 205 85% 50%;
-
-    --sidebar-background: 220 35% 10%;
-    --sidebar-foreground: 210 20% 92%;
-    --sidebar-primary: 205 85% 50%;
-    --sidebar-primary-foreground: 220 40% 4%;
-    --sidebar-accent: 220 30% 16%;
-    --sidebar-accent-foreground: 210 20% 92%;
-    --sidebar-border: 220 20% 18%;
-    --sidebar-ring: 205 85% 50%;
+    --sidebar-background: 30 3% 11%;
+    --sidebar-foreground: 40 8% 92%;
+    --sidebar-accent: 30 3% 17%;
+    --sidebar-accent-foreground: 40 8% 92%;
+    --sidebar-border: 30 3% 22%;
   }
 }
 
