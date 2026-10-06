@@ -596,7 +596,13 @@ export default function Pos() {
                   <span className="shrink-0 text-xs text-muted-foreground">{branchName}</span>
                 ) : null}
               </div>
-              <h1 className="hidden text-lg font-semibold leading-tight tracking-tight text-foreground sm:block">
+              {/* sr-only, NOT hidden, below sm. `hidden` sets display:none,
+                  which removes the screen's accessible name from the
+                  accessibility tree entirely -- on exactly the devices most
+                  likely to be driven by a screen reader. This keeps the
+                  heading announced at every size while giving the phone its
+                  vertical space back. */}
+              <h1 className="sr-only text-lg font-semibold leading-tight tracking-tight text-foreground sm:not-sr-only sm:block">
                 Till
               </h1>
               <p className="hidden text-xs text-muted-foreground sm:block">
