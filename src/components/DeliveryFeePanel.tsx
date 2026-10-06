@@ -53,7 +53,7 @@ export default function DeliveryFeePanel({ order, onUpdated }: DeliveryFeePanelP
     return (
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
+          <span className="inline-flex items-center rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-medium text-warning">
             Fee Sent
           </span>
           <span className="text-sm text-muted-foreground">Waiting for customer approval</span>
@@ -73,9 +73,9 @@ export default function DeliveryFeePanel({ order, onUpdated }: DeliveryFeePanelP
 
   // PENDING_DELIVERY_FEE — staff must set the fee
   return (
-    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 p-4 space-y-3">
+    <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 space-y-3">
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+        <span className="inline-flex items-center rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-medium text-warning">
           Awaiting Delivery Fee
         </span>
       </div>

@@ -63,7 +63,7 @@ function KeyButton({
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => onPress(label)}
       className={cn(
-        "flex items-center justify-center rounded-xl bg-secondary text-base font-semibold text-foreground",
+        "flex select-none items-center justify-center rounded-xl bg-secondary text-base font-semibold text-foreground shadow-sm transition-colors duration-fast",
         "select-none transition-transform active:scale-90 active:bg-secondary/70",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
         className
@@ -215,7 +215,7 @@ export default function TouchKeyboard() {
                   label={key}
                   ariaLabel={key === "back" ? "Backspace" : key === "shift" ? "Shift" : key}
                   onPress={press}
-                  className={cn("h-12 flex-1 text-sm", isWide ? "max-w-[64px] flex-[1.4]" : "max-w-[44px]")}
+                  className={cn("h-14 flex-1 text-base", isWide ? "max-w-[64px] flex-[1.4]" : "max-w-[44px]")}
                   display={displayLabel}
                 />
               );
@@ -227,10 +227,10 @@ export default function TouchKeyboard() {
             label={qwertyMode === "letters" ? "123" : "ABC"}
             ariaLabel={qwertyMode === "letters" ? "Numbers and symbols" : "Letters"}
             onPress={press}
-            className="h-12 w-20 text-xs"
+            className="h-14 w-20 text-sm"
             display={qwertyMode === "letters" ? "123" : "ABC"}
           />
-          <KeyButton label="space" ariaLabel="Space" onPress={press} className="h-12 flex-1 max-w-xs text-sm" display="Space" />
+          <KeyButton label="space" ariaLabel="Space" onPress={press} className="h-14 flex-1 max-w-xs text-sm" display="Space" />
         </div>
       </div>
     );
@@ -270,8 +270,8 @@ export default function TouchKeyboard() {
           {active.layout === "QWERTY" && renderQwerty()}
         </div>
         <div className="mt-2 flex justify-end gap-2">
-          <KeyButton label="clear" ariaLabel="Clear field" onPress={press} className="h-11 px-4 text-sm text-muted-foreground" display="Clear" />
-          <KeyButton label="done" ariaLabel="Done" onPress={press} className="h-11 flex-1 bg-primary px-4 text-sm font-semibold text-primary-foreground active:bg-primary/90" display="Done" />
+          <KeyButton label="clear" ariaLabel="Clear field" onPress={press} className="h-12 px-4 text-sm text-muted-foreground" display="Clear" />
+          <KeyButton label="done" ariaLabel="Done" onPress={press} className="h-12 flex-1 bg-brand px-4 text-sm font-semibold text-brand-foreground active:bg-brand-active" display="Done" />
         </div>
       </div>
     </div>

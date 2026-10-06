@@ -596,10 +596,17 @@ export default function Pos() {
                   <span className="shrink-0 text-xs text-muted-foreground">{branchName}</span>
                 ) : null}
               </div>
-              <h1 className="text-lg font-semibold leading-tight tracking-tight text-foreground">Till</h1>
-              <p className="text-xs text-muted-foreground">
+              <h1 className="hidden text-lg font-semibold leading-tight tracking-tight text-foreground sm:block">
+                Till
+              </h1>
+              <p className="hidden text-xs text-muted-foreground sm:block">
                 {tillOpen ? "Tap an item to add it to the order" : "Open the till to start selling"}
               </p>
+              {/* Phone: the till state still has to be visible, but as one
+                  short line rather than a heading plus a hint. */}
+              {!tillOpen && (
+                <p className="text-xs font-medium text-warning sm:hidden">Till closed</p>
+              )}
             </div>
           </div>
           <button
@@ -616,7 +623,10 @@ export default function Pos() {
             {/* Previously this read "Till closed" — a status, styled like a
                 badge, which told staff what was wrong but not that tapping it
                 was the fix. It now names the action it performs. */}
-            <span>{tillOpen ? "Cash-up" : "Open till"}</span>
+            {/* Phone: the icon plus the aria-label carry the meaning, and the
+                label would otherwise wrap to two lines and push the menu grid
+                down. The accessible name is unchanged at every size. */}
+            <span className="hidden sm:inline">{tillOpen ? "Cash-up" : "Open till"}</span>
           </button>
         </div>
 
@@ -718,13 +728,13 @@ export default function Pos() {
               description={search.trim() ? "Try a different search" : "Add items to the menu from the Manager Dashboard"}
             />
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {visibleItems.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleTileTap(item)}
                   disabled={!tillOpen}
-                  className="flex min-h-[110px] flex-col justify-between overflow-hidden rounded-xl border border-border bg-card p-3 text-left shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+                  className="flex min-h-[84px] flex-col justify-between gap-1 overflow-hidden rounded-xl border border-border bg-card p-3 text-left shadow-sm transition-all duration-fast hover:border-brand-border hover:shadow-md active:scale-[0.97] disabled:opacity-50 sm:min-h-[104px]"
                 >
                   {item.image_url && (
                     <img
@@ -733,8 +743,15 @@ export default function Pos() {
                       className="-mx-3 -mt-3 mb-2 h-16 w-[calc(100%+1.5rem)] object-cover"
                     />
                   )}
-                  <span className="text-sm font-semibold text-foreground line-clamp-2">{item.name}</span>
-                  <span className="text-sm font-bold text-primary">{formatCurrency(item.price_cents)}</span>
+                  <span className="text-sm font-semibold leading-snug text-foreground line-clamp-2">{item.name}</span>
+                  <span className="flex items-baseline justify-between gap-1">
+                    <span className="text-sm font-bold tabular-nums text-brand">{formatCurrency(item.price_cents)}</span>
+                    {itemHasChoices(item) && (
+                      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Options
+                      </span>
+                    )}
+                  </span>
                 </button>
               ))}
             </div>

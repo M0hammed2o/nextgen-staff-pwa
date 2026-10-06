@@ -65,8 +65,8 @@ export default function OrderCard({ order }: OrderCardProps) {
       </div>
 
       {order.special_instructions && (
-        <div className="mt-2 rounded-md bg-amber-50 px-3 py-1.5 dark:bg-amber-950/40">
-          <p className="truncate text-xs text-amber-700 dark:text-amber-400">
+        <div className="mt-2 rounded-md bg-warning/10 px-3 py-1.5">
+          <p className="truncate text-xs text-warning">
             Note: {order.special_instructions}
           </p>
         </div>
