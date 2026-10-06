@@ -66,6 +66,25 @@ export default function CartPanel({
   const deliveryFeeCents = orderMode === "DELIVERY" ? (posSettings?.delivery_fee_cents ?? 0) : 0;
   const estimatedTotalCents = Math.max(0, subtotalCents - discountCents - loyaltyDiscountCents) + deliveryFeeCents;
 
+  // VAT shown as a BREAKDOWN of the total, never as an addition to it.
+  //
+  // Only the inclusive case is rendered. With inclusive pricing the tax is
+  // already contained in the prices, so showing it changes no arithmetic --
+  // it is pure information, which is what POSSettings' own "the till shows a
+  // tax line before checkout" comment anticipates.
+  //
+  // The EXCLUSIVE case is deliberately NOT rendered: this cart's total does
+  // not add VAT today, so displaying an exclusive VAT line would either
+  // contradict the Checkout figure or require changing it -- and changing a
+  // total is a pricing change, which this programme is explicitly not allowed
+  // to make. If exclusive pricing needs a till-side total, that is a costed
+  // backend/pricing decision, not a visual one.
+  const vatRateBps = posSettings?.vat_rate_basis_points ?? 0;
+  const showsInclusiveVat = Boolean(posSettings?.vat_registered) && posSettings?.vat_inclusive_pricing === true && vatRateBps > 0;
+  const inclusiveVatCents = showsInclusiveVat
+    ? Math.round((estimatedTotalCents * vatRateBps) / (10000 + vatRateBps))
+    : 0;
+
   const tableNumberRequired = orderMode === "DINE_IN" && !!posSettings?.table_number_required;
   const canCheckout = lines.length > 0 && tillOpen && (!tableNumberRequired || tableNumber.trim().length > 0);
 
@@ -85,9 +104,15 @@ export default function CartPanel({
         ) : (
           <div className="space-y-3">
             {lines.map((line) => (
-              <div key={line.key} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+              <div key={line.key} className="rounded-xl border border-border bg-card p-3 transition-colors duration-fast">
+                <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">{line.name}</p>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{line.name}</p>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                      {formatCurrency(lineTotalCents(line))}
+                    </p>
+                  </div>
                   {line.selectedOptionsDisplay.map((o) => (
                     <p key={o.groupName} className="text-xs text-muted-foreground">{o.optionName}</p>
                   ))}
@@ -102,9 +127,6 @@ export default function CartPanel({
                   {line.specialInstructions && (
                     <p className="text-xs italic text-muted-foreground">{line.specialInstructions}</p>
                   )}
-                  <p className="mt-1 text-sm font-semibold text-foreground">
-                    {formatCurrency(lineTotalCents(line))}
-                  </p>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-2">
                   <button
@@ -132,6 +154,7 @@ export default function CartPanel({
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
+                </div>
                 </div>
               </div>
             ))}
@@ -229,7 +252,7 @@ export default function CartPanel({
                 />
               </div>
               {discountCents > 0 && posSettings && discountCents > posSettings.max_staff_discount_cents && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
+                <p className="text-xs text-warning">
                   Above your discount limit — this sale will need manager approval.
                 </p>
               )}
@@ -243,26 +266,42 @@ export default function CartPanel({
           <div className="space-y-1 text-sm">
             <div className="flex items-center justify-between text-muted-foreground">
               <span>Subtotal</span>
-              <span>{formatCurrency(subtotalCents)}</span>
+              <span className="tabular-nums">{formatCurrency(subtotalCents)}</span>
             </div>
             {discountCents > 0 && (
               <div className="flex items-center justify-between text-muted-foreground">
                 <span>Discount</span>
-                <span>-{formatCurrency(discountCents)}</span>
+                <span className="tabular-nums">-{formatCurrency(discountCents)}</span>
               </div>
             )}
             {loyaltyReward && (
               <div className="flex items-center justify-between text-muted-foreground">
-                <span>{loyaltyReward.name} (preview)</span>
-                <span>-{formatCurrency(loyaltyDiscountCents)}</span>
+                <span className="truncate pr-2">{loyaltyReward.name} (preview)</span>
+                <span className="shrink-0 tabular-nums">-{formatCurrency(loyaltyDiscountCents)}</span>
               </div>
             )}
             {deliveryFeeCents > 0 && (
               <div className="flex items-center justify-between text-muted-foreground">
                 <span>Delivery</span>
-                <span>{formatCurrency(deliveryFeeCents)}</span>
+                <span className="tabular-nums">{formatCurrency(deliveryFeeCents)}</span>
               </div>
             )}
+            {showsInclusiveVat && (
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Includes VAT ({(vatRateBps / 100).toFixed(2)}%)</span>
+                <span className="tabular-nums">{formatCurrency(inclusiveVatCents)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* The total is stated in its own right, not only inside the
+              Checkout button. A cashier reading an amount back to a customer
+              should not have to read it off a button. */}
+          <div className="flex items-baseline justify-between border-t border-border pt-3">
+            <span className="text-sm font-medium text-muted-foreground">Total</span>
+            <span className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+              {formatCurrency(estimatedTotalCents)}
+            </span>
           </div>
 
           {!tillOpen && (
@@ -278,10 +317,10 @@ export default function CartPanel({
             type="button"
             onClick={onCheckout}
             disabled={!canCheckout}
-            className="flex h-14 w-full items-center justify-between rounded-xl bg-primary px-5 text-primary-foreground shadow-lg disabled:opacity-50"
+            className="flex h-16 w-full items-center justify-between rounded-xl bg-brand px-5 text-brand-foreground shadow-md transition-colors duration-fast hover:bg-brand-hover active:bg-brand-active disabled:opacity-50"
           >
-            <span className="text-sm font-semibold">Checkout</span>
-            <span className="text-lg font-bold">{formatCurrency(estimatedTotalCents)}</span>
+            <span className="text-base font-semibold">Checkout</span>
+            <span className="text-xl font-bold tabular-nums">{formatCurrency(estimatedTotalCents)}</span>
           </button>
         </div>
       )}

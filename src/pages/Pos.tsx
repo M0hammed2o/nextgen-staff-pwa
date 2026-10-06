@@ -112,6 +112,12 @@ export default function Pos() {
     queryFn: () => apiClient.get<POSSettings>("/v1/business/pos/settings"),
   });
 
+  // Entitlement only. A `true` here means the module is switched on for this
+  // tenant -- it is NOT a claim that a Meta message template has been approved,
+  // which only the send attempt can establish and which ReceiptSendDialog
+  // reports honestly on its own.
+  const whatsappReceiptsAvailable = posSettings?.digital_receipts_enabled === true;
+
   // Restore a persisted draft exactly once, after the menu has loaded (so we
   // can re-validate cart lines against it). Deliberately per-user (see
   // pos-draft.ts) — a different cashier logging into the same terminal never
@@ -830,36 +836,55 @@ export default function Pos() {
                 reprint/retry, same as before. */}
             <div className="mt-5 space-y-2">
               <p className="text-center text-xs font-medium text-muted-foreground">Receipt</p>
+              {/* Truthful availability, decided BEFORE the cashier taps.
+                  Without this the only way to discover the module is off is
+                  to tap WhatsApp and watch the send return NOT_REQUESTED --
+                  which reads as a failure to a customer standing at the
+                  counter. This reflects the tenant's entitlement only; it is
+                  NOT a claim that Meta template approval is in place, which
+                  the send path reports on its own terms. */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => handleReceiptChoice("PRINT")}
-                  className="flex h-14 flex-col items-center justify-center gap-1 rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                  className="flex h-16 flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-card text-sm font-medium text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted"
                 >
-                  <Printer className="h-4 w-4" /> Print
+                  <Printer className="h-5 w-5" /> Print
                 </button>
                 <button
                   type="button"
                   onClick={() => handleReceiptChoice("WHATSAPP")}
-                  className="flex h-14 flex-col items-center justify-center gap-1 rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                  disabled={!whatsappReceiptsAvailable}
+                  title={whatsappReceiptsAvailable ? undefined : "WhatsApp receipts are not enabled for this restaurant"}
+                  className="flex h-16 flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-card text-sm font-medium text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-card"
                 >
-                  <MessageCircle className="h-4 w-4" /> WhatsApp
+                  <MessageCircle className="h-5 w-5" /> WhatsApp
+                  {!whatsappReceiptsAvailable && (
+                    <span className="text-[10px] font-normal text-muted-foreground">Not enabled</span>
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleReceiptChoice("BOTH")}
-                  className="flex h-12 items-center justify-center rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                  disabled={!whatsappReceiptsAvailable}
+                  title={whatsappReceiptsAvailable ? undefined : "WhatsApp receipts are not enabled for this restaurant"}
+                  className="flex h-12 items-center justify-center rounded-xl border border-border bg-card text-sm font-medium text-foreground transition-colors duration-fast hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-card"
                 >
                   Both
                 </button>
                 <button
                   type="button"
                   onClick={() => handleReceiptChoice("NONE")}
-                  className="flex h-12 items-center justify-center rounded-lg border border-border text-sm font-medium text-foreground active:bg-muted"
+                  className="flex h-12 items-center justify-center rounded-xl border border-border bg-card text-sm font-medium text-muted-foreground transition-colors duration-fast hover:bg-muted active:bg-muted"
                 >
                   No receipt
                 </button>
               </div>
+              {!whatsappReceiptsAvailable && (
+                <p className="text-center text-xs text-muted-foreground">
+                  WhatsApp receipts aren&apos;t enabled for this restaurant. Printing still works.
+                </p>
+              )}
               {receiptChoice === "NONE" && (
                 <p className="text-center text-xs text-muted-foreground">No receipt will be sent.</p>
               )}

@@ -90,9 +90,15 @@ export default function PaymentDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-          <span className="text-sm text-muted-foreground">Total due</span>
-          <span className="text-xl font-bold text-foreground">{formatCurrency(totalCents)}</span>
+        {/* The total is the number the cashier reads back to the customer, so
+            it gets the largest type on the screen rather than sharing a row
+            with its own label. Tabular figures keep the digits aligned as the
+            amount changes. */}
+        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-center">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total due</p>
+          <p className="mt-0.5 text-4xl font-semibold tabular-nums tracking-tight text-foreground">
+            {formatCurrency(totalCents)}
+          </p>
         </div>
         {loyaltyRewardPreview && (
           <p className="text-center text-xs text-muted-foreground">
@@ -107,7 +113,7 @@ export default function PaymentDialog({
               <button
                 type="button"
                 onClick={() => setStep("cash")}
-                className="flex h-14 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card text-base font-semibold text-foreground active:bg-muted"
+                className="flex h-20 w-full flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card text-base font-semibold text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted"
               >
                 💵 Cash
               </button>
@@ -116,7 +122,7 @@ export default function PaymentDialog({
               <button
                 type="button"
                 onClick={() => setStep("card")}
-                className="flex h-14 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card text-base font-semibold text-foreground active:bg-muted"
+                className="flex h-20 w-full flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card text-base font-semibold text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted"
               >
                 💳 Card
               </button>
@@ -125,7 +131,7 @@ export default function PaymentDialog({
               <button
                 type="button"
                 onClick={() => setStep("other")}
-                className="flex h-14 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card text-base font-semibold text-foreground active:bg-muted"
+                className="flex h-20 w-full flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card text-base font-semibold text-foreground shadow-sm transition-colors duration-fast hover:border-brand-border hover:bg-brand-soft active:bg-muted"
               >
                 Other
               </button>
@@ -174,19 +180,33 @@ export default function PaymentDialog({
               ))}
             </div>
 
-            <div className={cn(
-              "flex items-center justify-between rounded-lg p-3",
-              changeDueCents < 0 ? "bg-destructive/10" : "bg-success/10"
-            )}>
-              <span className="text-sm font-medium text-foreground">
-                {changeDueCents < 0 ? "Still owing" : "Change due"}
-              </span>
-              <span className={cn(
-                "text-lg font-bold",
-                changeDueCents < 0 ? "text-destructive" : "text-success"
+            {/* Tendered and change side by side: on a cash sale these are the
+                two figures the whole interaction turns on, and a cashier
+                counting change should not have to hunt for the second one. */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tendered</p>
+                <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">
+                  {formatCurrency(cashTenderedCents)}
+                </p>
+              </div>
+              <div className={cn(
+                "rounded-xl px-3 py-2.5",
+                changeDueCents < 0 ? "bg-destructive/10" : "bg-success/10"
               )}>
-                {formatCurrency(Math.abs(changeDueCents))}
-              </span>
+                <p className={cn(
+                  "text-[11px] font-medium uppercase tracking-wide",
+                  changeDueCents < 0 ? "text-destructive" : "text-success"
+                )}>
+                  {changeDueCents < 0 ? "Still owing" : "Change"}
+                </p>
+                <p className={cn(
+                  "mt-0.5 text-xl font-semibold tabular-nums",
+                  changeDueCents < 0 ? "text-destructive" : "text-success"
+                )}>
+                  {formatCurrency(Math.abs(changeDueCents))}
+                </p>
+              </div>
             </div>
 
             {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}

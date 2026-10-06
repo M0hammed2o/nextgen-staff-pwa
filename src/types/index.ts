@@ -347,6 +347,10 @@ export interface POSSettings {
   // Inventory — gates the quick-wastage action on the till
   inventory_enabled: boolean;
 
+  // Digital receipts — whether this business is entitled to the WhatsApp
+  // receipt module. Read-only: a platform-admin entitlement, never set here.
+  digital_receipts_enabled: boolean;
+
   // Which tabs this tenant's bottom navigation should show. Display
   // configuration only — a hidden tab never disables the feature, and
   // every route behind one still enforces its own permissions.

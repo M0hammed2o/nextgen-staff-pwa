@@ -55,7 +55,7 @@ const TILL_OPEN = {
   closed_at: null,
 };
 
-const POS_SETTINGS = {
+const POS_SETTINGS: Record<string, unknown> = {
   cash_enabled: true,
   card_enabled: false,
   other_payment_enabled: false,
@@ -70,6 +70,9 @@ const POS_SETTINGS = {
   receipt_copies: 1,
   print_kitchen_receipt: true,
   inventory_enabled: false,
+  // This tenant IS entitled to digital receipts -- the till only offers the
+  // WhatsApp/Both receipt options when it is.
+  digital_receipts_enabled: true,
   staff_live_orders_tab_enabled: true,
   staff_wastage_tab_enabled: false,
   staff_stocktake_tab_enabled: false,
@@ -177,6 +180,33 @@ async function ringUpAndPay() {
 
   await screen.findByText("Sale complete");
 }
+
+describe("Pos receipt choice — truthful WhatsApp availability", () => {
+  it("offers WhatsApp and Both when the business IS entitled to digital receipts", async () => {
+    POS_SETTINGS.digital_receipts_enabled = true;
+    await ringUpAndPay();
+
+    expect((await screen.findByRole("button", { name: /WhatsApp/ })) as HTMLButtonElement).not.toBeDisabled();
+    expect((await screen.findByRole("button", { name: /^Both$/ })) as HTMLButtonElement).not.toBeDisabled();
+    expect(screen.queryByText(/aren.t enabled for this restaurant/i)).toBeNull();
+  });
+
+  it("does NOT offer WhatsApp when the business is not entitled, and says so plainly", async () => {
+    // The cashier must learn this BEFORE tapping. Previously the only way to
+    // find out was to send and watch it come back NOT_REQUESTED, which reads
+    // as a failure to a customer standing at the counter.
+    POS_SETTINGS.digital_receipts_enabled = false;
+    await ringUpAndPay();
+
+    expect((await screen.findByRole("button", { name: /WhatsApp/ })) as HTMLButtonElement).toBeDisabled();
+    expect((await screen.findByRole("button", { name: /^Both$/ })) as HTMLButtonElement).toBeDisabled();
+    expect(screen.getByText(/aren.t enabled for this restaurant/i)).toBeInTheDocument();
+
+    // Printing is unaffected -- the sale is still fully serviceable.
+    expect((await screen.findByRole("button", { name: /Print/ })) as HTMLButtonElement).not.toBeDisabled();
+    expect((await screen.findByRole("button", { name: /No receipt/ })) as HTMLButtonElement).not.toBeDisabled();
+  });
+});
 
 describe("Pos checkout → receipt print", () => {
   it("a receipt fetch failure after a successful sale never causes a second POST to /pos/orders", async () => {

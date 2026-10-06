@@ -87,6 +87,8 @@ const POS_SETTINGS = {
   receipt_copies: 1,
   print_kitchen_receipt: true,
   inventory_enabled: false,
+  // Not entitled to digital receipts: the till must not offer WhatsApp.
+  digital_receipts_enabled: false,
   staff_live_orders_tab_enabled: true,
   staff_wastage_tab_enabled: false,
   staff_stocktake_tab_enabled: false,
