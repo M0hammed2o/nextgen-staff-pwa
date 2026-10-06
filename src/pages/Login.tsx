@@ -7,6 +7,7 @@ import PinKeypad from "@/components/PinKeypad";
 import InputModeToggle from "@/components/InputModeToggle";
 import { useTouchField } from "@/hooks/useTouchField";
 import logo from "@/assets/logo.jpeg";
+import { PoweredByNextGen, RestaurantIdentity, RestaurantMark } from "@/components/RestaurantIdentity";
 
 const PIN_LENGTH = 4;
 
@@ -130,12 +131,16 @@ export default function Login() {
   // ── Step 1: Business Code entry (first-time device setup) ─────────────────
   if (step === "setup") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
-        <div className="w-full max-w-sm space-y-8">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-10">
+        <div className="w-full max-w-sm">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-md space-y-8">
+          {/* The only screen that stays NextGen-branded: at this point no
+              restaurant has been identified yet, so showing anyone's identity
+              would be a guess. */}
           <div className="flex flex-col items-center gap-4">
-            <img src={logo} alt="NextGen Intelligence" className="h-16 w-auto rounded-lg" />
+            <img src={logo} alt="NextGen" className="h-14 w-auto rounded-xl" />
             <div className="text-center">
-              <h1 className="text-2xl font-bold text-foreground">Welcome</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Welcome</h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Enter your store code to get started
               </p>
@@ -185,9 +190,8 @@ export default function Login() {
             <InputModeToggle compact />
           </div>
 
-          <p className="text-center text-xs text-muted-foreground">
-            NextGen Intelligence © {new Date().getFullYear()}
-          </p>
+          </div>
+          <PoweredByNextGen className="mt-6" />
         </div>
       </div>
     );
@@ -196,13 +200,14 @@ export default function Login() {
   // ── Step 2: Pick your name ─────────────────────────────────────────────────
   if (step === "staff") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
-        <div className="w-full max-w-sm space-y-8">
-          <div className="flex flex-col items-center gap-3">
-            <img src={logo} alt={restaurantName} className="h-16 w-auto rounded-lg" />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-10">
+        <div className="w-full max-w-sm">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-md space-y-8">
+          <div className="flex flex-col items-center gap-4">
+            <RestaurantMark size="xl" />
             <div className="text-center">
-              <h1 className="text-xl font-bold text-foreground">{restaurantName}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Who's logging in?</p>
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">{restaurantName}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Who&apos;s logging in?</p>
             </div>
           </div>
 
@@ -248,9 +253,8 @@ export default function Login() {
             </button>
           </p>
 
-          <p className="text-center text-xs text-muted-foreground">
-            NextGen Intelligence © {new Date().getFullYear()}
-          </p>
+          </div>
+          <PoweredByNextGen className="mt-6" />
         </div>
       </div>
     );
@@ -258,16 +262,20 @@ export default function Login() {
 
   // ── Step 3: PIN entry for the selected staff member ───────────────────────
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
-      <div className="w-full max-w-sm space-y-8">
-        {/* Restaurant + staff branding */}
-        <div className="flex flex-col items-center gap-3">
-          <img src={logo} alt={restaurantName} className="h-16 w-auto rounded-lg" />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-10">
+      <div className="w-full max-w-sm">
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-md space-y-8">
+        {/* The screen a cashier sees at the start of every shift, and the one
+            that most has to feel like THEIR restaurant's system. */}
+        <div className="flex flex-col items-center gap-4">
+          <RestaurantIdentity size="lg" className="flex-col items-center text-center" />
           <div className="text-center">
-            <h1 className="text-xl font-bold text-foreground">
-              Hi, {selectedStaff?.staff_name}
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Welcome back, {selectedStaff?.staff_name}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">Enter your {PIN_LENGTH}-digit PIN to continue</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Enter your {PIN_LENGTH}-digit PIN
+            </p>
           </div>
         </div>
 
@@ -311,9 +319,8 @@ export default function Login() {
           </button>
         </div>
 
-        <p className="text-center text-xs text-muted-foreground">
-          NextGen Intelligence © {new Date().getFullYear()}
-        </p>
+        </div>
+        <PoweredByNextGen className="mt-6" />
       </div>
     </div>
   );
