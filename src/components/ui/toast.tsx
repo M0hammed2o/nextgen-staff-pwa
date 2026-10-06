@@ -14,7 +14,27 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      // KNOWN_BUGS.md BUG-0119 — fixed in the UI V2 programme.
+      //
+      // This viewport used to pin itself BOTTOM-RIGHT on >=sm
+      // ("sm:bottom-0 sm:right-0 sm:top-auto"). On a landscape till that is
+      // exactly where the persistent side-cart puts its Checkout button, so a
+      // success toast sat on top of the primary action: a hit test at the
+      // centre of Checkout returned the toast's <li>, and because the toast
+      // root carries `pointer-events-auto` it genuinely intercepted the tap
+      // rather than merely overlapping it. Measured at 1920x1080.
+      //
+      // Two independent protections now, because one is not enough:
+      //  1. POSITION — top-centre, on every breakpoint. No primary action in
+      //     this app lives there (the header's Cash-up is top-RIGHT), so the
+      //     collision is removed structurally rather than mitigated.
+      //  2. POINTER-EVENTS — the viewport stretches far wider than the toasts
+      //     inside it, so it is `pointer-events-none`; each toast re-enables
+      //     `pointer-events-auto` for itself (see toastVariants) so swipe and
+      //     close still work. Even if a future layout change moves a primary
+      //     control under this area, the empty parts of the viewport cannot
+      //     swallow a tap.
+      "pointer-events-none fixed left-1/2 top-0 z-[100] flex max-h-screen w-full -translate-x-1/2 flex-col gap-2 p-4 md:max-w-[420px]",
       className,
     )}
     {...props}
@@ -23,7 +43,7 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full",
+  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-top-full data-[state=open]:slide-in-from-top-full",
   {
     variants: {
       variant: {
