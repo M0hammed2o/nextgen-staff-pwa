@@ -198,7 +198,15 @@ export default function PaymentDialog({
                   "text-[11px] font-medium uppercase tracking-wide",
                   changeDueCents < 0 ? "text-destructive" : "text-success"
                 )}>
-                  {changeDueCents < 0 ? "Still owing" : "Change"}
+                  {/* "Change due", NOT "Change". The redesign briefly shortened
+                      this to fit the new side-by-side card, which broke 13
+                      Commercial V1 regression tests: the exact string is
+                      asserted in 11 places across rc0051, wave0a and
+                      wave0a-final. That wording is an established user-visible
+                      contract, and it is not worse than the short form -- a
+                      cashier reading "Change due R 36.50" is arguably clearer
+                      than "Change". Restoring it costs the layout nothing. */}
+                  {changeDueCents < 0 ? "Still owing" : "Change due"}
                 </p>
                 <p className={cn(
                   "mt-0.5 text-xl font-semibold tabular-nums",
