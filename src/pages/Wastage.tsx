@@ -7,6 +7,19 @@ import { useTouchField } from "@/hooks/useTouchField";
 import EmptyState from "@/components/EmptyState";
 import { Search } from "lucide-react";
 
+interface Props {
+  /**
+   * UI V2.1: Wastage is now reached as a tab inside Stocktake.tsx rather
+   * than its own bottom-nav destination/full page (B1) -- the same
+   * component, same API calls, nothing duplicated. When embedded, this
+   * suppresses the standalone page's own `<h1>`/full-height wrapper, since
+   * Stocktake already owns the page chrome (header, tab bar). Defaults to
+   * false so a direct render of this component (if one is ever added back)
+   * behaves exactly as it always has.
+   */
+  embedded?: boolean;
+}
+
 /**
  * Quick wastage capture.
  *
@@ -16,7 +29,7 @@ import { Search } from "lucide-react";
  * not get logged. So: search, tap the ingredient, tap a reason, tap a
  * quantity, done — no dropdowns, no modal stack, no navigation.
  */
-export default function Wastage() {
+export default function Wastage({ embedded = false }: Props) {
   const [search, setSearch] = useState("");
   const [ingredient, setIngredient] = useState<IngredientSummary | null>(null);
   const [reason, setReason] = useState<WastageReasonOption | null>(null);
@@ -117,8 +130,8 @@ export default function Wastage() {
 
   if (settings && !enabled) {
     return (
-      <div className="min-h-screen bg-background p-4 pb-24">
-        <h1 className="text-lg font-bold text-foreground">Wastage</h1>
+      <div className={embedded ? "" : "min-h-screen bg-background p-4 pb-24"}>
+        {!embedded && <h1 className="text-lg font-bold text-foreground">Wastage</h1>}
         <p className="mt-3 text-sm text-muted-foreground">
           Stock tracking is not switched on for this restaurant.
         </p>
@@ -127,8 +140,8 @@ export default function Wastage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 pb-24">
-      <h1 className="text-lg font-bold text-foreground">Record wastage</h1>
+    <div className={embedded ? "" : "min-h-screen bg-background p-4 pb-24"}>
+      {!embedded && <h1 className="text-lg font-bold text-foreground">Record wastage</h1>}
 
       {done && (
         <div className="mt-3 rounded-lg border border-success/40 bg-success/10 p-3">

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { usePOSSettings } from "@/lib/pos-settings";
 import type { StocktakeHistoryEntry, StocktakeLine, StocktakeSession } from "@/types";
 import { cn, formatCurrency } from "@/lib/utils";
-import { ClipboardCheck, History, Loader2, Search } from "lucide-react";
+import { ClipboardCheck, History, Loader2, Search, Trash } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
 import { useTouchField } from "@/hooks/useTouchField";
+import Wastage from "@/pages/Wastage";
 import {
   buildCountsPayload,
   defaultUnitFor,
@@ -32,7 +34,15 @@ import {
  *    history below is an audit trail rather than a current-state view.
  */
 
-type Tab = "COUNT" | "HISTORY";
+// UI V2.1 (B1): WASTAGE joins COUNT/HISTORY as a third tab on this same
+// page, reusing the existing Wastage component/API rather than keeping it as
+// its own bottom-nav destination. See BottomNav.tsx's own comment for why
+// (the old /wastage tab could appear even with inventory_enabled off --
+// this page's existing `if (!enabled)` guard below already correctly blocks
+// ALL three tabs together, closing that gap for Wastage too).
+type Tab = "COUNT" | "HISTORY" | "WASTAGE";
+
+const VALID_TABS: readonly Tab[] = ["COUNT", "HISTORY", "WASTAGE"];
 
 /**
  * One count-entry row, its own component so it can carry its own
@@ -117,7 +127,16 @@ export default function Stocktake() {
   const { data: settings } = usePOSSettings();
   const enabled = settings?.inventory_enabled ?? false;
 
-  const [tab, setTab] = useState<Tab>("COUNT");
+  // Backward-compat for the old /wastage URL (now redirected to
+  // /stocktake?tab=WASTAGE by App.tsx) -- a bookmark or a staff member's
+  // muscle memory lands them on the Wastage tab directly rather than Count.
+  // Read once at mount only: the tab bar's own buttons own tab switching
+  // after that, same as every other local-only tab UI in this app.
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab")?.toUpperCase();
+  const [tab, setTab] = useState<Tab>(
+    VALID_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "COUNT"
+  );
   const [counts, setCounts] = useState<Record<string, CountEntry>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
@@ -250,7 +269,7 @@ export default function Stocktake() {
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 px-4 py-4 backdrop-blur-sm safe-top">
         <h1 className="text-xl font-bold text-foreground">Stocktake</h1>
         <div className="mt-3 flex gap-2">
-          {(["COUNT", "HISTORY"] as Tab[]).map((t) => (
+          {VALID_TABS.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -259,8 +278,8 @@ export default function Stocktake() {
                 tab === t ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
               )}
             >
-              {t === "COUNT" ? <ClipboardCheck className="h-4 w-4" /> : <History className="h-4 w-4" />}
-              {t === "COUNT" ? "Count" : "Previous counts"}
+              {t === "COUNT" ? <ClipboardCheck className="h-4 w-4" /> : t === "WASTAGE" ? <Trash className="h-4 w-4" /> : <History className="h-4 w-4" />}
+              {t === "COUNT" ? "Count" : t === "WASTAGE" ? "Wastage" : "Previous counts"}
             </button>
           ))}
         </div>
@@ -361,6 +380,12 @@ export default function Stocktake() {
             </div>
           </>
         )
+      ) : tab === "WASTAGE" ? (
+        // Reuses the real Wastage component/API directly -- no duplicated
+        // ingredient search, reason picker or submit logic. `embedded`
+        // suppresses its own standalone h1/full-height wrapper since this
+        // page already owns that chrome.
+        <Wastage embedded />
       ) : loadingHistory ? (
         <div className="flex justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />

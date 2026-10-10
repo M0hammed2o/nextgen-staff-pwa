@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
 import { BrandProvider } from "@/lib/brand-provider";
 import { BrandSync } from "@/components/BrandSync";
@@ -15,8 +15,8 @@ import LiveOrders from "@/pages/LiveOrders";
 import Pos from "@/pages/Pos";
 import OrderDetail from "@/pages/OrderDetail";
 import CompletedOrders from "@/pages/CompletedOrders";
-import Wastage from "@/pages/Wastage";
 import Stocktake from "@/pages/Stocktake";
+import Loyalty from "@/pages/Loyalty";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/NotFound";
 
@@ -75,19 +75,23 @@ const App = () => (
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/wastage"
-            element={
-              <ProtectedRoute>
-                <Wastage />
-              </ProtectedRoute>
-            }
-          />
+          {/* UI V2.1 (B1): Wastage is now a tab inside Stocktake, not its own
+              page. This keeps the old URL working for anyone's bookmark/
+              muscle memory rather than a dead link. */}
+          <Route path="/wastage" element={<Navigate to="/stocktake?tab=WASTAGE" replace />} />
           <Route
             path="/stocktake"
             element={
               <ProtectedRoute>
                 <Stocktake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/loyalty"
+            element={
+              <ProtectedRoute>
+                <Loyalty />
               </ProtectedRoute>
             }
           />
