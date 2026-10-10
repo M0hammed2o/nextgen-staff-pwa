@@ -13,9 +13,11 @@ import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
  *    used to be able to appear with inventory off; Stocktake itself was
  *    already correctly gated server-side, this just makes that explicit and
  *    consistent on the frontend side too).
- *  - Loyalty is entitlement-probed (lib/loyalty.ts::useLoyaltyEnabled) since
- *    it has no POSSettings field, and only shown when the probe resolves
- *    true.
+ *  - Loyalty follow-up (Part B2): gated directly on
+ *    `POSSettings.loyalty_enabled`, a real field mirroring
+ *    `Business.loyalty_enabled` -- replacing the earlier
+ *    `lib/loyalty.ts::useLoyaltyEnabled` probe that inferred entitlement
+ *    from a `LOYALTY_NOT_ENABLED` API error on an unrelated endpoint.
  */
 
 const getMock = vi.fn();
@@ -47,15 +49,11 @@ const BASE_SETTINGS = {
   receipt_copies: 1,
   print_kitchen_receipt: false,
   inventory_enabled: false,
+  loyalty_enabled: false,
   staff_live_orders_tab_enabled: true,
   staff_wastage_tab_enabled: true,
   staff_stocktake_tab_enabled: false,
 };
-
-/** A 409 shaped exactly like the backend's LOYALTY_NOT_ENABLED entitlement gate. */
-function loyaltyNotEnabledError() {
-  return Object.assign(new Error("LOYALTY_NOT_ENABLED"), { status: 409, code: "LOYALTY_NOT_ENABLED" });
-}
 
 function mockApi(opts: { inventoryEnabled: boolean; stocktakeTab: boolean; loyaltyEnabled: boolean }) {
   getMock.mockReset();
@@ -65,10 +63,8 @@ function mockApi(opts: { inventoryEnabled: boolean; stocktakeTab: boolean; loyal
         ...BASE_SETTINGS,
         inventory_enabled: opts.inventoryEnabled,
         staff_stocktake_tab_enabled: opts.stocktakeTab,
+        loyalty_enabled: opts.loyaltyEnabled,
       });
-    }
-    if (url === "/v1/business/loyalty/rewards") {
-      return opts.loyaltyEnabled ? Promise.resolve([]) : Promise.reject(loyaltyNotEnabledError());
     }
     return Promise.reject(new Error(`unexpected GET ${url}`));
   });
@@ -109,11 +105,12 @@ describe("BottomNav — Stocktake/Wastage/Loyalty entitlement gating", () => {
     expect(screen.queryByText("Stocktake")).not.toBeInTheDocument();
   });
 
-  it("loyalty not entitled: Loyalty nav entry absent", async () => {
+  it("loyalty not entitled: Loyalty nav entry absent, and the loyalty rewards endpoint is never called just to find out", async () => {
     mockApi({ inventoryEnabled: false, stocktakeTab: false, loyaltyEnabled: false });
     renderBottomNav();
-    await waitFor(() => expect(getMock).toHaveBeenCalledWith("/v1/business/loyalty/rewards"));
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith("/v1/business/pos/settings"));
     expect(screen.queryByText("Loyalty")).not.toBeInTheDocument();
+    expect(getMock).not.toHaveBeenCalledWith("/v1/business/loyalty/rewards");
   });
 
   it("loyalty entitled: Loyalty nav entry present", async () => {

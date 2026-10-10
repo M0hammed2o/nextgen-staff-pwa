@@ -351,6 +351,12 @@ export interface POSSettings {
   // receipt module. Read-only: a platform-admin entitlement, never set here.
   digital_receipts_enabled: boolean;
 
+  // Loyalty — gates the staff Loyalty nav entry/page (UI V2.1 follow-up
+  // Part B). Read-only: a platform-admin entitlement
+  // (Business.loyalty_enabled), mirrored directly here rather than inferred
+  // by probing the Loyalty API — see lib/loyalty.ts.
+  loyalty_enabled: boolean;
+
   // Which tabs this tenant's bottom navigation should show. Display
   // configuration only — a hidden tab never disables the feature, and
   // every route behind one still enforces its own permissions.

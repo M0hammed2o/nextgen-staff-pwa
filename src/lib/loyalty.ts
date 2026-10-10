@@ -1,8 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "./api";
 import type { ApiFetchError } from "./api";
 import type { CustomerLoyaltyResponse, LoyaltyRewardResponse } from "@/types";
-import { useAuth } from "@/lib/auth";
 
 /**
  * True if this failure is the backend's 409 `LOYALTY_NOT_ENABLED` —
@@ -105,50 +103,4 @@ export async function lookupLoyaltyCustomer(phone: string): Promise<CustomerLoya
  */
 export function listLoyaltyRewards(): Promise<LoyaltyRewardResponse[]> {
   return apiClient.get<LoyaltyRewardResponse[]>("/v1/business/loyalty/rewards");
-}
-
-/**
- * Is the Loyalty module actually entitled for this business? (UI V2.1, B3 --
- * gates the bottom-nav "Loyalty" entry, shown only when true.)
- *
- * There is no `loyalty_enabled` field on `POSSettings`/`GET /v1/business/
- * pos/settings` today (unlike `inventory_enabled`, which IS exposed there --
- * see types/index.ts). Rather than add a new backend field for this one nav
- * decision, this reuses `listLoyaltyRewards()` -- an existing, side-effect-
- * free GET already built for LoyaltyRewardPicker.tsx, whose 409
- * `LOYALTY_NOT_ENABLED` is the exact same entitlement signal, already
- * handled by `isLoyaltyNotEnabledError`. A real empty reward list (entitled,
- * nothing configured yet) still resolves to "entitled" -- an empty array is
- * a valid, successful response, not an error.
- *
- * Deliberately does NOT reuse `lookupLoyaltyCustomer` for this probe: that
- * endpoint creates a customer record as a side effect for the phone number
- * it's given (see that function's own docstring) and has no side-effect-free
- * equivalent, so it is the wrong tool for a background "is this feature on"
- * check that fires on every app load.
- *
- * NOTE for a future session: if another caller ever needs this same boolean,
- * the cleaner long-term fix is adding `loyalty_enabled` to
- * `POSSettingsResponse` server-side, mirroring `inventory_enabled` exactly --
- * flagged here rather than done speculatively, since this probe-based
- * approach already satisfies the one real caller today without a backend
- * change.
- */
-export function useLoyaltyEnabled() {
-  const { isAuthenticated } = useAuth();
-  return useQuery({
-    queryKey: ["loyalty-entitlement-probe"],
-    queryFn: async () => {
-      try {
-        await listLoyaltyRewards();
-        return true;
-      } catch (err) {
-        if (isLoyaltyNotEnabledError(err)) return false;
-        throw err;
-      }
-    },
-    enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  });
 }

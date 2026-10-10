@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { usePOSSettings } from "@/lib/pos-settings";
-import { useLoyaltyEnabled } from "@/lib/loyalty";
 import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
 import type { POSSettings } from "@/types";
 import { cn } from "@/lib/utils";
@@ -16,13 +15,6 @@ interface Tab {
    * till and no way to sign out is not a staff app.
    */
   enabled?: (s: POSSettings | null) => boolean;
-  /**
-   * Loyalty's entitlement isn't on POSSettings (see lib/loyalty.ts's
-   * useLoyaltyEnabled doc comment for why) -- a second, independent gate
-   * checked alongside `enabled` so a non-POSSettings-backed tab can exist
-   * without reshaping every other tab's signature.
-   */
-  requiresLoyalty?: boolean;
 }
 
 const TABS: Tab[] = [
@@ -79,9 +71,15 @@ const TABS: Tab[] = [
     // UI V2.1 (B3): read-only phone-number lookup of a customer's points
     // balance/tier and the current reward catalogue. Redemption itself is
     // unchanged -- it still only ever happens at Till checkout.
+    //
+    // Follow-up Part B2: gated directly on POSSettings.loyalty_enabled (a
+    // real field mirroring Business.loyalty_enabled), replacing the earlier
+    // useLoyaltyEnabled() probe that inferred entitlement from a
+    // LOYALTY_NOT_ENABLED API error. Same shape as every other tab's gate
+    // now -- no separate mechanism needed.
     to: "/loyalty",
     label: "Loyalty",
-    requiresLoyalty: true,
+    enabled: (s) => !!s?.loyalty_enabled,
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="20 12 20 22 4 22 4 12" />
@@ -117,11 +115,6 @@ const TABS: Tab[] = [
 export default function BottomNav() {
   const location = useLocation();
   const { data: settings = null } = usePOSSettings();
-  // Hidden (not just disabled) while the probe is loading/unknown -- same
-  // "don't flash a tab on then off" posture every other entitlement-gated
-  // tab here already uses via `enabled`. false/undefined both read as "not
-  // entitled yet", which is the only safe default for an unresolved probe.
-  const { data: loyaltyEnabled = false } = useLoyaltyEnabled();
   const { active: touchKeyboardActive } = useTouchKeyboardContext();
   const navRef = useRef<HTMLElement | null>(null);
 
@@ -158,10 +151,7 @@ export default function BottomNav() {
 
   if (isHidden) return null;
 
-  const tabs = TABS.filter((t) => {
-    if (t.requiresLoyalty && !loyaltyEnabled) return false;
-    return !t.enabled || t.enabled(settings);
-  });
+  const tabs = TABS.filter((t) => !t.enabled || t.enabled(settings));
 
   return (
     <nav ref={navRef} className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
