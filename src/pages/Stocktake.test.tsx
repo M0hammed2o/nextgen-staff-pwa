@@ -30,7 +30,7 @@ vi.mock("@/lib/auth", () => ({
 
 import Stocktake from "@/pages/Stocktake";
 
-const SETTINGS = { inventory_enabled: true, staff_stocktake_tab_enabled: true };
+const SETTINGS = { inventory_enabled: true, staff_stocktake_tab_enabled: true, staff_wastage_tab_enabled: true };
 
 const INGREDIENTS = [
   { id: "ing-1", name: "Full Cream Milk", canonical_unit: "MILLILITRE", count_method: "VOLUME", on_hand_milli: 4_000_000, on_hand_display: "4 L", below_par: false },
@@ -119,5 +119,39 @@ describe("Stocktake — Wastage tab (B1 merge)", () => {
 
     const ingredientCalls = getMock.mock.calls.filter((c) => c[0] === "/v1/business/inventory/ingredients");
     expect(ingredientCalls.length).toBe(1);
+  });
+});
+
+describe("Stocktake — Wastage tab keeps its own admin-controlled visibility (staff_wastage_tab_enabled)", () => {
+  it("hides the Wastage tab when staff_wastage_tab_enabled is off, even though inventory/stocktake are on", async () => {
+    getMock.mockReset();
+    getMock.mockImplementation((url: string) => {
+      if (url === "/v1/business/pos/settings") {
+        return Promise.resolve({ inventory_enabled: true, staff_stocktake_tab_enabled: true, staff_wastage_tab_enabled: false });
+      }
+      if (url === "/v1/business/stocktake/current") return Promise.resolve(null);
+      if (url === "/v1/business/stocktake") return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+    renderAt("/stocktake");
+
+    await waitFor(() => expect(screen.getByText("No count in progress")).toBeInTheDocument());
+    expect(screen.queryByText("Wastage")).not.toBeInTheDocument();
+  });
+
+  it("falls back to Count when the ?tab=WASTAGE deep link is used but staff_wastage_tab_enabled is off", async () => {
+    getMock.mockReset();
+    getMock.mockImplementation((url: string) => {
+      if (url === "/v1/business/pos/settings") {
+        return Promise.resolve({ inventory_enabled: true, staff_stocktake_tab_enabled: true, staff_wastage_tab_enabled: false });
+      }
+      if (url === "/v1/business/stocktake/current") return Promise.resolve(null);
+      if (url === "/v1/business/stocktake") return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+    renderAt("/stocktake?tab=WASTAGE");
+
+    await waitFor(() => expect(screen.getByText("No count in progress")).toBeInTheDocument());
+    expect(screen.queryByPlaceholderText("Search ingredients…")).not.toBeInTheDocument();
   });
 });

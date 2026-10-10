@@ -42,7 +42,7 @@ import {
 // ALL three tabs together, closing that gap for Wastage too).
 type Tab = "COUNT" | "HISTORY" | "WASTAGE";
 
-const VALID_TABS: readonly Tab[] = ["COUNT", "HISTORY", "WASTAGE"];
+const ALL_TABS: readonly Tab[] = ["COUNT", "HISTORY", "WASTAGE"];
 
 /**
  * One count-entry row, its own component so it can carry its own
@@ -127,16 +127,33 @@ export default function Stocktake() {
   const { data: settings } = usePOSSettings();
   const enabled = settings?.inventory_enabled ?? false;
 
+  // Wastage keeps its own admin-controlled visibility switch
+  // (staff_wastage_tab_enabled) even though it's now a tab here rather than
+  // its own bottom-nav destination -- an admin who turned this off for a
+  // tenant should still see it off, not have it reappear as a side effect of
+  // the merge. Hidden (not shown then removed) while settings haven't loaded
+  // yet, same convention as every other gate in this app; this is a UX
+  // convenience gate only, same as the rest -- the real enforcement is
+  // _require_inventory_enabled on the backend, unaffected by this.
+  const wastageTabEnabled = settings?.staff_wastage_tab_enabled ?? false;
+  const VALID_TABS: readonly Tab[] = wastageTabEnabled ? ALL_TABS : ALL_TABS.filter((t) => t !== "WASTAGE");
+
   // Backward-compat for the old /wastage URL (now redirected to
   // /stocktake?tab=WASTAGE by App.tsx) -- a bookmark or a staff member's
   // muscle memory lands them on the Wastage tab directly rather than Count.
-  // Read once at mount only: the tab bar's own buttons own tab switching
-  // after that, same as every other local-only tab UI in this app.
+  // Checked against ALL_TABS (not VALID_TABS) here, since `settings` hasn't
+  // loaded yet on first render and wastageTabEnabled would otherwise always
+  // read as false at this exact moment -- the effect below corrects the tab
+  // back down once settings actually confirms it's off.
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get("tab")?.toUpperCase();
   const [tab, setTab] = useState<Tab>(
-    VALID_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "COUNT"
+    ALL_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "COUNT"
   );
+
+  useEffect(() => {
+    if (settings && tab === "WASTAGE" && !wastageTabEnabled) setTab("COUNT");
+  }, [settings, wastageTabEnabled, tab]);
   const [counts, setCounts] = useState<Record<string, CountEntry>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
