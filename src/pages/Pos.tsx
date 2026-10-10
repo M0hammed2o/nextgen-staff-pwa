@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import type { ApiFetchError } from "@/lib/api";
 import type {
-  CartLine, LoyaltyRewardResponse, MenuCategoryEntry, MenuItemEntry, Order, POSOrderCreateRequest, POSPaymentMethod,
+  CartLine, LoyaltyRewardResponse, MenuCategoryEntry, MenuItemEntry, Order, POSCheckoutPaymentPayload, POSOrderCreateRequest,
   POSSettings, TillSession,
 } from "@/types";
 import type { ReceiptDocument } from "@/types/receipt";
@@ -402,11 +402,7 @@ export default function Pos() {
     }
   }
 
-  async function handleConfirmPayment(payload: {
-    payment_method: POSPaymentMethod;
-    cash_tendered_cents?: number;
-    payment_reference?: string;
-  }) {
+  async function handleConfirmPayment(payload: POSCheckoutPaymentPayload) {
     setIsSubmitting(true);
     setErrorMessage(null);
     const body: POSOrderCreateRequest = {
@@ -430,9 +426,16 @@ export default function Pos() {
         removed_ingredient_ids: line.removedIngredientIds,
         special_instructions: line.specialInstructions,
       })),
-      payment_method: payload.payment_method,
-      cash_tendered_cents: payload.cash_tendered_cents,
-      payment_reference: payload.payment_reference,
+      // Exactly one of the two checkout payment shapes — see
+      // PaymentDialog.tsx's "Split payment" entry point and
+      // POSCheckoutPaymentPayload's docstring in src/types/index.ts.
+      ...("payments" in payload
+        ? { payments: payload.payments }
+        : {
+            payment_method: payload.payment_method,
+            cash_tendered_cents: payload.cash_tendered_cents,
+            payment_reference: payload.payment_reference,
+          }),
       idempotency_key: idempotencyKey,
     };
     // Freeze this exact payload + key as "in flight" BEFORE sending. If the
@@ -988,6 +991,7 @@ export default function Pos() {
         loyaltyRewardPreview={
           loyaltyReward ? { name: loyaltyReward.name, discountCents: loyaltyDiscountPreviewCents } : null
         }
+        customerPhone={customerPhone}
       />
 
       {lastOrder && (

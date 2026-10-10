@@ -285,10 +285,66 @@ export interface POSOrderCreateRequest {
   // both. The backend is the only thing that ever validates/applies it;
   // this frontend never computes the resulting discount independently.
   loyalty_reward_id?: string | null;
-  payment_method: POSPaymentMethod;
+  // ── Payment: EXACTLY ONE of the two shapes below, never both ──────────
+  // Legacy single-method checkout (unchanged) — `payment_method` stays
+  // required in practice for a normal sale; it is typed optional here only
+  // because a split-payment checkout (see `payments` below) omits it
+  // entirely. Pos.tsx::handleConfirmPayment is the single place that
+  // decides which shape to send, driven by whether the cashier used
+  // PaymentDialog's "Split payment" entry point.
+  payment_method?: POSPaymentMethod;
   cash_tendered_cents?: number | null;
   payment_reference?: string | null;
+  // Split-payment checkout (POS split-payment / Pay-by-Link feature). >= 2
+  // entries; the backend validates SUM(payments[].amount_cents) ==
+  // server-computed total_cents exactly and rejects any PAY_BY_LINK entry
+  // whose payment_intent_id isn't already confirmed PAID. Mutually
+  // exclusive with `payment_method`/`cash_tendered_cents`/`payment_reference`
+  // above.
+  payments?: POSPaymentAllocationRequest[];
   idempotency_key?: string | null;
+}
+
+// A single tender line within a split-payment checkout. `PAY_BY_LINK` is
+// only ever valid here (never as the legacy top-level `payment_method`,
+// which predates Pay-by-Link entirely).
+export type POSSplitPaymentMethod = POSPaymentMethod | "PAY_BY_LINK";
+
+export interface POSPaymentAllocationRequest {
+  payment_method: POSSplitPaymentMethod;
+  amount_cents: number;
+  cash_tendered_cents?: number;
+  payment_reference?: string;
+  payment_intent_id?: string;
+}
+
+// The two payloads PaymentDialog can hand back to Pos.tsx::handleConfirmPayment
+// — either a normal single-method confirmation (unchanged shape) or the new
+// split-payment array. Pos.tsx is the only place that maps this onto
+// POSOrderCreateRequest.
+export type POSCheckoutPaymentPayload =
+  | { payment_method: POSPaymentMethod; cash_tendered_cents?: number; payment_reference?: string }
+  | { payments: POSPaymentAllocationRequest[] };
+
+// ── Pay by Link (WhatsApp payment-link) payment intents ────────────────────
+// POST/GET /v1/business/pos/payment-intents[...]. This is the ONLY safe,
+// client-facing shape — it never includes the raw payment link URL. The
+// Staff UI must never display, copy, or open that link anywhere (hard
+// product constraint); the cashier only ever sees status.
+export type PaymentIntentStatus = "PENDING" | "PAID" | "FAILED" | "EXPIRED" | "CANCELLED" | "CONSUMED";
+export type PaymentIntentWhatsAppStatus = "NOT_SENT" | "SENT" | "FAILED" | "TEMPLATE_REQUIRED";
+
+export interface PaymentIntent {
+  id: string;
+  status: PaymentIntentStatus;
+  whatsapp_status: PaymentIntentWhatsAppStatus;
+  amount_cents: number;
+  expires_at: string;
+}
+
+export interface PaymentIntentCreateRequest {
+  amount_cents: number;
+  customer_phone: string;
 }
 
 export interface POSRefundRequest {
@@ -363,6 +419,12 @@ export interface POSSettings {
   staff_live_orders_tab_enabled: boolean;
   staff_wastage_tab_enabled: boolean;
   staff_stocktake_tab_enabled: boolean;
+
+  // Pay by Link (WhatsApp payment-link) entitlement. Optional/possibly
+  // absent on older backend responses during rollout — treat `undefined`
+  // the same as `false` (hide the option), never crash on it. See
+  // PaymentDialog.tsx's split-payment "+ Add payment" method list.
+  pay_by_link_enabled?: boolean;
 }
 
 // ── Inventory (staff-facing subset) ────────────────────────────────────────
