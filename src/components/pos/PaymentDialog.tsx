@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Split, X } from "lucide-react";
-import type { POSPaymentMethod, POSSettings, POSSplitPaymentMethod, POSCheckoutPaymentPayload, PaymentIntentStatus, PaymentIntentWhatsAppStatus } from "@/types";
+import type { POSPaymentMethod, POSSettings, POSSplitPaymentMethod, POSCheckoutPaymentPayload, PaymentIntent, PaymentIntentStatus, PaymentIntentWhatsAppStatus } from "@/types";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
 import { looksLikeSaPhoneNumber } from "@/lib/phone";
-import { createPaymentIntent, getPaymentIntent, resendPaymentIntent, cancelPaymentIntent, maskPhoneForStatus } from "@/lib/payment-intents";
+import { createPaymentIntent, getPaymentIntent, resendPaymentIntent, cancelPaymentIntent, maskPhoneForStatus, formatIntentReceivedAt } from "@/lib/payment-intents";
 import type { ApiFetchError } from "@/lib/api";
 
 /**
@@ -46,6 +46,24 @@ interface SplitAllocation {
   whatsappStatus?: PaymentIntentWhatsAppStatus;
   /** Display-only, already masked — the raw number is never stored here. */
   maskedPhone?: string;
+  /** An EXISTING already-PAID intent picked via "Use existing payment"
+   * (Pos.tsx's "Payment received but sale not completed" recovery) rather
+   * than a link created in this dialog. Removing it locally is safe — it
+   * is never cancelled (a PAID intent can't be) and it stays listed by
+   * GET /payment-intents/unconsumed-paid until a checkout consumes it. */
+  resumed?: boolean;
+}
+
+/** Exact copy required by the financial-safety brief — shown whenever the
+ * cashier tries to leave the payment screen (Back out of split, or close
+ * the dialog) while a Pay-by-Link allocation has already been PAID but the
+ * sale hasn't been completed, since leaving would drop real received money
+ * from the screen with no order pointing at it. */
+export const LEAVE_WITH_PAID_LINK_MESSAGE =
+  "Payment has already been received. Complete this sale before leaving the payment screen.";
+
+function isPaidLink(a: SplitAllocation): boolean {
+  return a.method === "PAY_BY_LINK" && a.intentStatus === "PAID";
 }
 
 /** A Pay-by-Link allocation only counts as real, collected money once the
@@ -102,6 +120,13 @@ interface Props {
    * let the cashier type one). Never auto-submitted.
    */
   customerPhone?: string | null;
+  /**
+   * An already-PAID, never-consumed intent the cashier chose to resume from
+   * Pos.tsx's recovery banner. When set, the Pay-by-Link sub-flow offers
+   * "Use existing payment" (attach THIS intent by id, no new link sent)
+   * ahead of the normal send-a-new-link form.
+   */
+  resumePaymentIntent?: PaymentIntent | null;
 }
 
 type Step =
@@ -118,7 +143,7 @@ type Step =
 
 export default function PaymentDialog({
   open, onClose, totalCents, posSettings, onConfirm, isSubmitting, errorMessage, loyaltyRewardPreview = null,
-  customerPhone = null,
+  customerPhone = null, resumePaymentIntent = null,
 }: Props) {
   const [step, setStep] = useState<Step>("method");
   const [cashInput, setCashInput] = useState("");
@@ -137,6 +162,10 @@ export default function PaymentDialog({
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [backingOutOfSplit, setBackingOutOfSplit] = useState(false);
+  // Dialog-level blocking notice (e.g. LEAVE_WITH_PAID_LINK_MESSAGE).
+  const [blockingNotice, setBlockingNotice] = useState<string | null>(null);
+  const [resumeChecking, setResumeChecking] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const cashTouch = useTouchField({ value: cashInput, onChange: setCashInput, layout: "CURRENCY" });
   const referenceTouch = useTouchField({ value: reference, onChange: setReference, layout: "QWERTY", maxLength: 255 });
@@ -162,9 +191,18 @@ export default function PaymentDialog({
       setResendingId(null);
       setCancellingId(null);
       setBackingOutOfSplit(false);
+      setBlockingNotice(null);
+      setResumeChecking(false);
+      setResumeError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // A blocking notice / resume error belongs to the screen it was raised on.
+  useEffect(() => {
+    setBlockingNotice(null);
+    setResumeError(null);
+  }, [step]);
 
   const cashTenderedCents = Math.round((parseFloat(cashInput || "0") || 0) * 100);
   const changeDueCents = cashTenderedCents - totalCents;
@@ -178,6 +216,9 @@ export default function PaymentDialog({
   const paidCents = allocations.reduce((sum, a) => sum + (isAllocationSettled(a) ? a.amountCents : 0), 0);
   const hasUnsettledLink = allocations.some((a) => a.method === "PAY_BY_LINK" && a.intentStatus !== "PAID");
   const canCompleteSplit = remainingCents === 0 && !hasUnsettledLink && allocations.length > 0;
+  // PAID but not yet consumed (checkout hasn't been submitted) — leaving the
+  // payment screen now would lose track of real money.
+  const hasPaidLink = allocations.some(isPaidLink);
 
   const enabledMethodCount = [
     posSettings?.cash_enabled, posSettings?.card_enabled, posSettings?.other_payment_enabled, posSettings?.pay_by_link_enabled,
@@ -214,7 +255,23 @@ export default function PaymentDialog({
 
   function handleClose() {
     if (isSubmitting) return;
+    if (hasPaidLink) {
+      setBlockingNotice(LEAVE_WITH_PAID_LINK_MESSAGE);
+      return;
+    }
     onClose();
+  }
+
+  /** Cancel failed — the backend refuses to cancel anything not PENDING, so
+   * the customer may have paid since the last poll. Re-read the intent
+   * rather than assuming it's gone. Returns the fresh intent, or null if
+   * that read failed too (status genuinely unknown). */
+  async function refreshAfterFailedCancel(intentId: string): Promise<PaymentIntent | null> {
+    try {
+      return await getPaymentIntent(intentId);
+    } catch {
+      return null;
+    }
   }
 
   function startAddAllocation(method: POSSplitPaymentMethod) {
@@ -301,14 +358,36 @@ export default function PaymentDialog({
     const alloc = allocations.find((a) => a.id === allocationId);
     if (alloc?.method === "PAY_BY_LINK" && alloc.intentStatus === "PENDING" && alloc.paymentIntentId) {
       setCancellingId(allocationId);
+      let paidMeanwhile: PaymentIntent | null = null;
       try {
         await cancelPaymentIntent(alloc.paymentIntentId);
       } catch {
-        // Best-effort — still remove locally below. A stray PENDING intent
-        // left server-side simply expires on its own; checkout can never
-        // reference it since it isn't in this allocation list anymore.
+        // If the customer paid between the last poll and this cancel, the
+        // backend refused (422 PAYMENT_INTENT_NOT_PENDING) — keep the now-PAID
+        // allocation instead of silently dropping received money. Any other
+        // failure stays best-effort as before: a stray PENDING intent simply
+        // expires, and checkout can never reference it once it's removed
+        // from this list (a PAID one would still surface in Pos.tsx's
+        // unconsumed-paid banner).
+        const latest = await refreshAfterFailedCancel(alloc.paymentIntentId);
+        if (latest?.status === "PAID") paidMeanwhile = latest;
       } finally {
         setCancellingId(null);
+      }
+      if (paidMeanwhile) {
+        const latest = paidMeanwhile;
+        setAllocations((prev) =>
+          prev.map((a) => (a.id === allocationId ? { ...a, intentStatus: latest.status, whatsappStatus: latest.whatsapp_status } : a))
+        );
+        setActiveLinkAllocationId(null);
+        if (step === "split") {
+          setBlockingNotice(LEAVE_WITH_PAID_LINK_MESSAGE);
+        } else {
+          setStep("split");
+          // Raised after the step-change effect has cleared notices.
+          setTimeout(() => setBlockingNotice(LEAVE_WITH_PAID_LINK_MESSAGE), 0);
+        }
+        return;
       }
     }
     setAllocations((prev) => prev.filter((a) => a.id !== allocationId));
@@ -323,17 +402,95 @@ export default function PaymentDialog({
   // allocation still PENDING is a real, live server-side intent. Cancel
   // each of those first rather than silently abandoning them (same rule as
   // the single-allocation remove button above).
+  //
+  // A PAID (not yet consumed) Pay-by-Link allocation blocks this outright:
+  // that's received money, and discarding it here is exactly the
+  // "payment disappears with no order" gap this guard closes.
   async function handleBackFromSplit() {
+    if (hasPaidLink) {
+      setBlockingNotice(LEAVE_WITH_PAID_LINK_MESSAGE);
+      return;
+    }
     const pendingLinks = allocations.filter(
       (a) => a.method === "PAY_BY_LINK" && a.intentStatus === "PENDING" && a.paymentIntentId
     );
     setBackingOutOfSplit(true);
-    await Promise.all(
-      pendingLinks.map((a) => cancelPaymentIntent(a.paymentIntentId!).catch(() => {}))
+    const outcomes = await Promise.all(
+      pendingLinks.map(async (a) => {
+        try {
+          const cancelled: PaymentIntent | null = await cancelPaymentIntent(a.paymentIntentId!);
+          return { allocationId: a.id, intent: cancelled };
+        } catch {
+          // Same race as removeAllocation: a refused cancel may mean it was
+          // just paid. Re-read before discarding.
+          return { allocationId: a.id, intent: await refreshAfterFailedCancel(a.paymentIntentId!) };
+        }
+      })
     );
     setBackingOutOfSplit(false);
+    if (outcomes.some((o) => o.intent?.status === "PAID")) {
+      // Stay on the split screen with every allocation's latest known state.
+      const latestById = new Map<string, PaymentIntent>();
+      outcomes.forEach((o) => {
+        if (o.intent) latestById.set(o.allocationId, o.intent);
+      });
+      setAllocations((prev) =>
+        prev.map((c) => {
+          const latest = latestById.get(c.id);
+          return latest ? { ...c, intentStatus: latest.status, whatsappStatus: latest.whatsapp_status } : c;
+        })
+      );
+      setBlockingNotice(LEAVE_WITH_PAID_LINK_MESSAGE);
+      return;
+    }
     setAllocations([]);
     setStep("method");
+  }
+
+  // "Use existing payment" — attach an ALREADY-PAID, never-consumed intent
+  // (from Pos.tsx's recovery banner) as this checkout's Pay-by-Link
+  // allocation, by id. No new intent is created and nothing is sent: the
+  // money is already received. Re-read first so a payment another device
+  // has meanwhile used (or one that's somehow no longer PAID) is refused
+  // here rather than at checkout. The allocation amount is the intent's own
+  // server-side amount — the backend rejects any other figure
+  // (PAYMENT_INTENT_AMOUNT_MISMATCH) — so it's never editable.
+  async function useExistingPayment() {
+    if (!resumePaymentIntent || resumeChecking) return;
+    setResumeChecking(true);
+    setResumeError(null);
+    try {
+      const latest = await getPaymentIntent(resumePaymentIntent.id);
+      if (latest.status !== "PAID" || latest.order_id) {
+        setResumeError("This payment has already been used for a sale or is no longer available.");
+        return;
+      }
+      if (latest.amount_cents > remainingCents) {
+        setResumeError(
+          `This payment is ${formatCurrency(latest.amount_cents)}, more than the ${formatCurrency(remainingCents)} still owing.`
+        );
+        return;
+      }
+      setAllocations((prev) => [
+        ...prev,
+        {
+          id: newAllocationId(),
+          method: "PAY_BY_LINK",
+          amountCents: latest.amount_cents,
+          paymentIntentId: latest.id,
+          intentStatus: latest.status,
+          whatsappStatus: latest.whatsapp_status,
+          maskedPhone: latest.customer_phone_masked ?? undefined,
+          resumed: true,
+        },
+      ]);
+      setStep("split");
+    } catch (err) {
+      const apiErr = err as ApiFetchError;
+      setResumeError(apiErr?.message ?? "Couldn't confirm this payment with the server — try again.");
+    } finally {
+      setResumeChecking(false);
+    }
   }
 
   function handleCompleteSplit() {
@@ -349,6 +506,13 @@ export default function PaymentDialog({
   }
 
   const activeLinkAllocation = allocations.find((a) => a.id === activeLinkAllocationId) ?? null;
+  const resumeOffer =
+    resumePaymentIntent &&
+    resumePaymentIntent.status === "PAID" &&
+    !resumePaymentIntent.order_id &&
+    !allocations.some((a) => a.paymentIntentId === resumePaymentIntent.id)
+      ? resumePaymentIntent
+      : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -387,6 +551,11 @@ export default function PaymentDialog({
           <p className="text-center text-xs text-muted-foreground">
             Includes {loyaltyRewardPreview.name} (-{formatCurrency(loyaltyRewardPreview.discountCents)}) · preview,
             confirmed at checkout
+          </p>
+        )}
+        {blockingNotice && (
+          <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+            {blockingNotice}
           </p>
         )}
 
@@ -603,7 +772,11 @@ export default function PaymentDialog({
             ) : (
               <ul className="space-y-2">
                 {allocations.map((a, idx) => {
-                  const canRemove = a.method !== "PAY_BY_LINK" || a.intentStatus !== "PAID";
+                  // A PAID link created here can't be removed (it's received
+                  // money — complete the sale). A RESUMED one can: removing it
+                  // only detaches it locally; it stays unconsumed server-side
+                  // and stays in Pos.tsx's recovery banner.
+                  const canRemove = a.method !== "PAY_BY_LINK" || a.intentStatus !== "PAID" || a.resumed === true;
                   const linkStatus = a.method === "PAY_BY_LINK" ? describeLinkStatus(a) : null;
                   const isOpenable = a.method === "PAY_BY_LINK" && a.intentStatus !== "PAID";
                   return (
@@ -623,6 +796,7 @@ export default function PaymentDialog({
                       >
                         <p className="text-sm font-semibold text-foreground">
                           Payment {idx + 1} · {a.method === "PAY_BY_LINK" ? "Pay by Link" : a.method}
+                          {a.resumed && <span className="font-normal text-muted-foreground"> · existing payment</span>}
                         </p>
                         <p className="text-sm tabular-nums text-muted-foreground">{formatCurrency(a.amountCents)}</p>
                         {linkStatus && (
@@ -872,6 +1046,35 @@ export default function PaymentDialog({
 
         {step === "split-link" && !activeLinkAllocation && (
           <div className="space-y-4">
+            {resumeOffer && (() => {
+              const fits = resumeOffer.amount_cents <= remainingCents;
+              const receivedAt = formatIntentReceivedAt(resumeOffer.paid_at);
+              return (
+                <div className="space-y-2 rounded-xl border border-success/40 bg-success/5 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-success">Payment already received</p>
+                  <button
+                    type="button"
+                    onClick={useExistingPayment}
+                    disabled={!fits || resumeChecking}
+                    className="flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-success px-3 py-2 text-sm font-semibold text-success-foreground disabled:opacity-50"
+                  >
+                    {resumeChecking ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      `Use existing payment (${formatCurrency(resumeOffer.amount_cents)}${receivedAt ? `, received ${receivedAt}` : ""})`
+                    )}
+                  </button>
+                  {!fits && (
+                    <p className="text-xs text-destructive">
+                      This payment is {formatCurrency(resumeOffer.amount_cents)}, more than the {formatCurrency(remainingCents)} still
+                      owing. Add items to the sale (or remove another payment) before using it.
+                    </p>
+                  )}
+                  {resumeError && <p className="text-sm text-destructive">{resumeError}</p>}
+                  <p className="pt-1 text-center text-xs text-muted-foreground">Or send a new payment link:</p>
+                </div>
+              );
+            })()}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Amount to apply to bill</label>
               <input

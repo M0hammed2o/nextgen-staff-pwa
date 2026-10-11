@@ -3,11 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import type { ApiFetchError } from "@/lib/api";
 import type {
-  CartLine, LoyaltyRewardResponse, MenuCategoryEntry, MenuItemEntry, Order, POSCheckoutPaymentPayload, POSOrderCreateRequest,
-  POSSettings, TillSession,
+  CartLine, LoyaltyRewardResponse, MenuCategoryEntry, MenuItemEntry, Order, PaymentIntent, POSCheckoutPaymentPayload,
+  POSOrderCreateRequest, POSSettings, TillSession,
 } from "@/types";
 import type { ReceiptDocument } from "@/types/receipt";
 import { fetchReceiptDocument } from "@/lib/receipts";
+import { listUnconsumedPaidPaymentIntents, formatIntentReceivedAt } from "@/lib/payment-intents";
 import ItemOptionsDialog from "@/components/pos/ItemOptionsDialog";
 import CartPanel, { lineTotalCents, type OrderMode } from "@/components/pos/CartPanel";
 import { previewLoyaltyDiscountCents } from "@/components/pos/LoyaltyRewardPicker";
@@ -20,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand-provider";
 import { RestaurantMark } from "@/components/RestaurantIdentity";
-import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle } from "lucide-react";
+import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle, AlertTriangle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
@@ -101,11 +102,51 @@ export default function Pos() {
     queryFn: () => apiClient.get<MenuItemEntry[]>("/v1/business/menu/items"),
   });
 
-  const { data: till } = useQuery({
+  const { data: till, isFetched: tillFetched } = useQuery({
     queryKey: ["till-current"],
     queryFn: () => apiClient.get<TillSession | null>("/v1/business/pos/till/current"),
   });
   const tillOpen = !!till;
+
+  // -- Paid-but-unconsumed Pay-by-Link recovery --------------------------
+  // A Pay-by-Link intent that reached PAID but was never consumed into an
+  // order (cashier backed out, refresh, browser crash) is real received
+  // money with no order pointing at it. Checked on mount (so a refresh
+  // re-shows it -- deliberately NOT gated on any in-memory state), whenever
+  // a till is opened, and after every completed sale (see
+  // finishSuccessfulSale). Never polled on an interval.
+  const {
+    data: unconsumedPaidIntents = [],
+    isError: unconsumedPaidError,
+    isFetching: unconsumedPaidFetching,
+    refetch: refetchUnconsumedPaid,
+  } = useQuery({
+    queryKey: ["pos-unconsumed-paid-intents"],
+    queryFn: listUnconsumedPaidPaymentIntents,
+  });
+  // The intent the cashier picked via "Resume Sale" -- offered to
+  // PaymentDialog's Pay-by-Link sub-flow as "Use existing payment".
+  // In-memory only: after a refresh the banner (re-fetched on mount) is the
+  // way back to it.
+  const [resumeIntent, setResumeIntent] = useState<PaymentIntent | null>(null);
+  const lastTillIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!tillFetched) return;
+    const currentId = till?.id ?? null;
+    // Only on a real transition to a (new) open till -- the initial load is
+    // already covered by the query's own on-mount fetch.
+    if (lastTillIdRef.current !== undefined && currentId && currentId !== lastTillIdRef.current) {
+      void refetchUnconsumedPaid();
+    }
+    lastTillIdRef.current = currentId;
+  }, [till?.id, tillFetched, refetchUnconsumedPaid]);
+  // Drop a resume selection once that intent is no longer unconsumed (used
+  // by this sale, or resolved from another device).
+  useEffect(() => {
+    if (resumeIntent && !unconsumedPaidIntents.some((i) => i.id === resumeIntent.id)) {
+      setResumeIntent(null);
+    }
+  }, [unconsumedPaidIntents, resumeIntent]);
 
   const { data: posSettings = null } = useQuery({
     queryKey: ["pos-settings"],
@@ -391,6 +432,9 @@ export default function Pos() {
     // succeeded.
     closeTouchKeyboard();
     queryClient.invalidateQueries({ queryKey: ["live-orders"] });
+    // A completed sale may have consumed a resumed paid intent (or another
+    // device may have resolved one) -- re-check rather than trust the banner.
+    queryClient.invalidateQueries({ queryKey: ["pos-unconsumed-paid-intents"] });
 
     // Print AFTER the sale is safely saved, and never inside the try that
     // guards the sale itself. Payment and printing are separate concerns:
@@ -694,6 +738,87 @@ export default function Pos() {
         </div>
       )}
 
+      {/* Paid-but-unconsumed Pay-by-Link money. Persistent (no dismiss) for
+          as long as the backend still lists anything -- the only way to
+          clear it is to actually complete a sale with that payment. Never
+          shows the payment link itself, only amount/masked phone/time. */}
+      {unconsumedPaidIntents.length > 0 && (
+        <div className="px-4 pt-4">
+          <div role="alert" className="rounded-xl border-2 border-destructive bg-destructive/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-destructive">Payment received but sale not completed</p>
+                <p className="mt-0.5 text-sm text-foreground">
+                  The customer has paid, but no sale was recorded. Resume the sale to attach this payment to an order.
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {unconsumedPaidIntents.map((intent) => {
+                    const receivedAt = formatIntentReceivedAt(intent.paid_at);
+                    const selected = resumeIntent?.id === intent.id;
+                    return (
+                      <li
+                        key={intent.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold tabular-nums text-foreground">{formatCurrency(intent.amount_cents)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {[intent.customer_phone_masked, receivedAt ? `received ${receivedAt}` : null].filter(Boolean).join(" · ")}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setResumeIntent(intent)}
+                          disabled={selected}
+                          aria-label={`Resume Sale for ${formatCurrency(intent.amount_cents)}`}
+                          className="h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground active:opacity-90 disabled:opacity-60"
+                        >
+                          {selected ? "Resuming" : "Resume Sale"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {resumeIntent && (
+                  <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <p className="text-sm text-foreground">
+                      Ring up items totalling {formatCurrency(resumeIntent.amount_cents)}, then choose Split payment, then Pay by
+                      Link in the payment screen and select this pending payment (&ldquo;Use existing payment&rdquo;) instead
+                      of sending a new link.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setResumeIntent(null)}
+                      className="mt-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      Stop resuming
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* A failed check is surfaced, not swallowed: silence here would read
+          as "nothing outstanding" when we simply don't know. */}
+      {unconsumedPaidError && unconsumedPaidIntents.length === 0 && (
+        <div className="px-4 pt-4">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3">
+            <p className="text-sm text-foreground">Couldn&apos;t check for payments received without a completed sale.</p>
+            <button
+              type="button"
+              onClick={() => void refetchUnconsumedPaid()}
+              disabled={unconsumedPaidFetching}
+              className="flex-shrink-0 text-xs font-semibold text-foreground underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              Check again
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* The till being closed is the single most common reason a sale cannot
           be rung up, and the header button alone was too easy to miss on a
           busy screen. This states the blocker in plain words and carries the
@@ -992,6 +1117,7 @@ export default function Pos() {
           loyaltyReward ? { name: loyaltyReward.name, discountCents: loyaltyDiscountPreviewCents } : null
         }
         customerPhone={customerPhone}
+        resumePaymentIntent={resumeIntent}
       />
 
       {lastOrder && (

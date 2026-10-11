@@ -340,6 +340,22 @@ export interface PaymentIntent {
   whatsapp_status: PaymentIntentWhatsAppStatus;
   amount_cents: number;
   expires_at: string;
+  // The fields below mirror routes_pos.py::POSPaymentIntentResponse. All
+  // optional here so older fixtures/mocks stay valid; the backend always
+  // sends them (nullable). None of them is the raw payment link URL, which
+  // this type must never carry.
+  currency?: string;
+  provider?: string;
+  whatsapp_failure_reason?: string | null;
+  /** Already masked server-side, e.g. "+27 •• ••• 1234". */
+  customer_phone_masked?: string | null;
+  created_at?: string;
+  paid_at?: string | null;
+  provider_reference?: string | null;
+  till_session_id?: string | null;
+  created_by_user_id?: string | null;
+  /** Null until the intent is consumed into an order at checkout. */
+  order_id?: string | null;
 }
 
 export interface PaymentIntentCreateRequest {

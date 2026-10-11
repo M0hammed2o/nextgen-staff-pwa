@@ -36,9 +36,42 @@ export function resendPaymentIntent(id: string): Promise<PaymentIntent> {
   return apiClient.post<PaymentIntent>(`/v1/business/pos/payment-intents/${id}/resend`);
 }
 
-/** Only works while the intent is PENDING — a terminal intent 4xxs. */
+/**
+ * Every PAID intent for this business that was never consumed into an order
+ * (cashier backed out, page refresh, browser crash) — business-wide, not
+ * scoped to the current till, oldest first. This is real, received money;
+ * Pos.tsx shows a persistent "Payment received but sale not completed"
+ * banner for anything returned here, checked on mount, on till open, and
+ * after each completed sale (never polled continuously).
+ */
+export function listUnconsumedPaidPaymentIntents(): Promise<PaymentIntent[]> {
+  return apiClient.get<PaymentIntent[]>("/v1/business/pos/payment-intents/unconsumed-paid");
+}
+
+/**
+ * Only works while the intent is PENDING — a terminal intent 4xxs. In
+ * particular the backend rejects cancelling a PAID intent (422
+ * PAYMENT_INTENT_NOT_PENDING), so a failure here can mean the customer paid
+ * between the last poll and this call — callers must re-check the intent's
+ * status before discarding it (see PaymentDialog.tsx).
+ */
 export function cancelPaymentIntent(id: string): Promise<PaymentIntent> {
   return apiClient.post<PaymentIntent>(`/v1/business/pos/payment-intents/${id}/cancel`);
+}
+
+/**
+ * "14:32" for a payment received today, "10 Oct, 14:32" otherwise — for the
+ * unconsumed-paid recovery banner and "Use existing payment" button. Returns
+ * null for a missing/unparseable timestamp so callers can omit it.
+ */
+export function formatIntentReceivedAt(iso: string | null | undefined, now: Date = new Date()): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const time = d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return time;
+  const date = d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+  return `${date}, ${time}`;
 }
 
 /**
