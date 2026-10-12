@@ -64,3 +64,36 @@ export function resolveTouchActive(mode: InputModeSetting): boolean {
   if (mode === "keyboard") return false;
   return detectTouchCapable();
 }
+
+/**
+ * iPhone/iPad/iPod, including iPadOS 13+ — which reports itself as
+ * "Macintosh" in its user-agent, so it is told apart from a real Mac by
+ * MacIntel + more than one touch point (no Mac has a touchscreen).
+ */
+export function detectIsIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && (navigator.maxTouchPoints ?? 0) > 1);
+}
+
+/** Any Android browser, and the Capacitor Android WebView this app also ships in (its UA contains "Android"). */
+export function detectIsAndroid(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android/.test(navigator.userAgent);
+}
+
+/**
+ * True only for a device that should get the CUSTOM on-screen keyboard —
+ * the Windows+Chrome touchscreen workaround this system exists for.
+ * Never true on iOS/Android: they always have a real native keyboard,
+ * and no explicit override should force the workaround onto them.
+ *
+ * Deliberately separate from resolveTouchActive(), which keeps its existing
+ * meaning ("is this a touch device / did the user choose Touchscreen").
+ */
+export function resolveCustomKeyboardActive(mode: InputModeSetting): boolean {
+  if (detectIsIOS() || detectIsAndroid()) return false;
+  if (mode === "touch") return true;
+  if (mode === "keyboard") return false;
+  return detectTouchCapable();
+}

@@ -26,7 +26,7 @@ import EmptyState from "@/components/EmptyState";
 export default function Loyalty() {
   const [phone, setPhone] = useState("");
   const [submitted, setSubmitted] = useState("");
-  const phoneTouch = useTouchField({ value: phone, onChange: setPhone, layout: "NUMERIC" });
+  const phoneTouch = useTouchField({ value: phone, onChange: setPhone, layout: "NUMERIC", nativeInputMode: "tel" });
 
   // Deliberately NOT auto-searched on every keystroke/debounce, unlike
   // LoyaltyBalance's till-side use of this same lookup: that endpoint

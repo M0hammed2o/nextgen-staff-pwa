@@ -883,11 +883,16 @@ export default function Pos() {
                   className="flex min-h-[84px] flex-col justify-between gap-1 overflow-hidden rounded-xl border border-border bg-card p-3 text-left shadow-sm transition-all duration-fast hover:border-brand-border hover:shadow-md active:scale-[0.97] disabled:opacity-50 sm:min-h-[104px]"
                 >
                   {item.image_url && (
-                    <img
-                      src={item.image_url}
-                      alt=""
-                      className="-mx-3 -mt-3 mb-2 h-16 w-[calc(100%+1.5rem)] object-cover"
-                    />
+                    // Fixed 4:3 frame + object-contain: the whole dish is
+                    // always visible and never stretched; a photo of a
+                    // different shape is letterboxed on the muted backdrop
+                    // instead of being cropped (was h-16 object-cover). The
+                    // img is absolutely positioned: as an in-flow child a
+                    // square/tall photo's intrinsic height overrode the
+                    // aspect ratio and grew the frame (verified in Chromium).
+                    <div className="relative -mx-3 -mt-3 mb-2 aspect-[4/3] w-[calc(100%+1.5rem)] shrink-0 overflow-hidden bg-muted">
+                      <img src={item.image_url} alt="" className="absolute inset-0 h-full w-full object-contain" />
+                    </div>
                   )}
                   <span className="text-sm font-semibold leading-snug text-foreground line-clamp-2">{item.name}</span>
                   <span className="flex items-baseline justify-between gap-1">

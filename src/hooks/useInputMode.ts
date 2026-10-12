@@ -3,6 +3,7 @@ import {
   getStoredInputMode,
   setStoredInputMode,
   resolveTouchActive,
+  resolveCustomKeyboardActive,
   INPUT_MODE_CHANGE_EVENT,
   type InputModeSetting,
 } from "@/lib/touch-input";
@@ -31,5 +32,11 @@ export function useInputMode() {
     setModeState(next);
   }, []);
 
-  return { mode, touchActive: resolveTouchActive(mode), setMode };
+  return {
+    mode,
+    touchActive: resolveTouchActive(mode),
+    /** Whether fields should open the CUSTOM on-screen keyboard (Windows-touch workaround only; always false on iOS/Android). */
+    customKeyboardActive: resolveCustomKeyboardActive(mode),
+    setMode,
+  };
 }

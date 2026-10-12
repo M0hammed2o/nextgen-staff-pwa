@@ -40,7 +40,7 @@ export default function Wastage({ embedded = false }: Props) {
   const [done, setDone] = useState<string | null>(null);
 
   const searchTouch = useTouchField({ value: search, onChange: setSearch, layout: "QWERTY" });
-  const quantityTouch = useTouchField({ value: quantity, onChange: setQuantity, layout: "NUMERIC" });
+  const quantityTouch = useTouchField({ value: quantity, onChange: setQuantity, layout: "NUMERIC", nativeInputMode: "decimal" });
   const noteTouch = useTouchField({ value: note, onChange: setNote, layout: "QWERTY", maxLength: 500 });
 
   const { data: settings } = useQuery<POSSettings>({

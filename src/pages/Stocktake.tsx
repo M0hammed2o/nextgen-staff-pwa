@@ -70,7 +70,7 @@ function StocktakeCountRow({
   onChangeQuantity: (v: string) => void;
   onChangeUnit: (v: string) => void;
 }) {
-  const touch = useTouchField({ value: entry.quantity, onChange: onChangeQuantity, layout: "NUMERIC" });
+  const touch = useTouchField({ value: entry.quantity, onChange: onChangeQuantity, layout: "NUMERIC", nativeInputMode: "decimal" });
   const unitOptions = unitOptionsFor(line.canonical_unit, line.unit_label);
 
   return (

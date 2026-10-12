@@ -4,13 +4,21 @@ import { MemoryRouter } from "react-router-dom";
 import { useState } from "react";
 import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
 import TouchKeyboard from "@/components/TouchKeyboard";
-import { useTouchField } from "@/hooks/useTouchField";
+import { useTouchField, type NativeInputMode } from "@/hooks/useTouchField";
 import { setStoredInputMode } from "@/lib/touch-input";
 import type { TouchKeyboardLayout } from "@/lib/touch-keyboard";
 
-function Harness({ layout = "QWERTY", maxLength }: { layout?: TouchKeyboardLayout; maxLength?: number }) {
+function Harness({
+  layout = "QWERTY",
+  maxLength,
+  nativeInputMode,
+}: {
+  layout?: TouchKeyboardLayout;
+  maxLength?: number;
+  nativeInputMode?: NativeInputMode;
+}) {
   const [value, setValue] = useState("");
-  const touch = useTouchField({ value, onChange: setValue, layout, maxLength });
+  const touch = useTouchField({ value, onChange: setValue, layout, maxLength, nativeInputMode });
   return (
     <div>
       <input aria-label="field" value={value} onChange={(e) => setValue(e.target.value)} {...touch.fieldProps} />
@@ -40,11 +48,11 @@ afterEach(() => {
 });
 
 describe("useTouchField + TouchKeyboard integration", () => {
-  it("keyboard+mouse mode: the field is left untouched and the keyboard never opens", () => {
+  it("keyboard+mouse mode: the field only gets its native inputMode and the keyboard never opens", () => {
     setStoredInputMode("keyboard");
     renderHarness();
     const input = screen.getByLabelText("field");
-    expect(input).not.toHaveAttribute("inputmode");
+    expect(input).toHaveAttribute("inputmode", "text");
     fireEvent.focus(input);
     expect(screen.queryByRole("group", { name: /on-screen keyboard/i })).not.toBeInTheDocument();
   });
@@ -67,6 +75,69 @@ describe("useTouchField + TouchKeyboard integration", () => {
     setStoredInputMode("touch");
     renderHarness();
     expect(screen.getByLabelText("field")).toHaveAttribute("inputmode", "none");
+  });
+
+  it.each([
+    ["NUMERIC", "numeric"],
+    ["CURRENCY", "decimal"],
+    ["PHONE", "tel"],
+    ["QWERTY", "text"],
+  ] as const)("native-keyboard path: %s layout renders inputMode=%s", (layout, expected) => {
+    setStoredInputMode("keyboard");
+    renderHarness({ layout });
+    expect(screen.getByLabelText("field")).toHaveAttribute("inputmode", expected);
+  });
+
+  it("a call site's nativeInputMode overrides the layout default on the native path only", () => {
+    setStoredInputMode("keyboard");
+    renderHarness({ layout: "NUMERIC", nativeInputMode: "decimal" });
+    expect(screen.getByLabelText("field")).toHaveAttribute("inputmode", "decimal");
+
+    cleanup();
+    setStoredInputMode("touch");
+    renderHarness({ layout: "NUMERIC", nativeInputMode: "decimal" });
+    expect(screen.getByLabelText("field")).toHaveAttribute("inputmode", "none");
+  });
+
+  describe("iOS / Android always use the device's native keyboard", () => {
+    const DEVICES = {
+      iPhone: {
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+        platform: "iPhone",
+      },
+      "iPadOS 13+": {
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+        platform: "MacIntel",
+      },
+      Android: {
+        userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        platform: "Linux armv8l",
+      },
+    };
+
+    afterEach(() => {
+      for (const key of ["userAgent", "platform", "maxTouchPoints"]) {
+        delete (window.navigator as unknown as Record<string, unknown>)[key];
+      }
+    });
+
+    for (const [name, device] of Object.entries(DEVICES)) {
+      for (const mode of ["auto", "touch"] as const) {
+        it(`${name}, ${mode} mode: no inputMode=none, native mapping applied, custom keyboard never opens`, () => {
+          Object.defineProperty(window.navigator, "userAgent", { value: device.userAgent, configurable: true });
+          Object.defineProperty(window.navigator, "platform", { value: device.platform, configurable: true });
+          Object.defineProperty(window.navigator, "maxTouchPoints", { value: 5, configurable: true });
+          setStoredInputMode(mode);
+          renderHarness({ layout: "CURRENCY" });
+          const input = screen.getByLabelText("field");
+          expect(input).toHaveAttribute("inputmode", "decimal");
+          fireEvent.focus(input);
+          expect(screen.queryByRole("group", { name: /on-screen keyboard/i })).not.toBeInTheDocument();
+          expect(document.documentElement.style.getPropertyValue("--touch-keyboard-height")).toBe("0px");
+          expect(document.body.classList.contains("touch-keyboard-open")).toBe(false);
+        });
+      }
+    }
   });
 
   it("pressing digit keys updates the field's value through its normal onChange path", () => {
