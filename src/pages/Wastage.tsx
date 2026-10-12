@@ -130,7 +130,7 @@ export default function Wastage({ embedded = false }: Props) {
 
   if (settings && !enabled) {
     return (
-      <div className={embedded ? "" : "min-h-screen bg-background p-4 pb-24"}>
+      <div className={embedded ? "" : "min-h-app bg-background p-4 pb-nav"}>
         {!embedded && <h1 className="text-lg font-bold text-foreground">Wastage</h1>}
         <p className="mt-3 text-sm text-muted-foreground">
           Stock tracking is not switched on for this restaurant.
@@ -140,7 +140,7 @@ export default function Wastage({ embedded = false }: Props) {
   }
 
   return (
-    <div className={embedded ? "" : "min-h-screen bg-background p-4 pb-24"}>
+    <div className={embedded ? "" : "min-h-app bg-background p-4 pb-nav"}>
       {!embedded && <h1 className="text-lg font-bold text-foreground">Record wastage</h1>}
 
       {done && (

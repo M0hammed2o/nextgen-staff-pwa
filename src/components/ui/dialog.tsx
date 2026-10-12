@@ -52,11 +52,32 @@ function isTouchKeyboardTarget(target: EventTarget | null): boolean {
 //    no max-height at all).
 // A call site's own `style` prop (e.g. an extra bottom-padding spacer) is
 // merged on top, not replaced, so nothing existing silently stops working.
+//
+// Mobile/PWA viewport fit: the usable area is the VISIBLE viewport
+// (--app-height: 100dvh with a 100vh fallback, src/index.css) minus the
+// status-bar/notch inset at the top and, at the bottom, whichever is taller
+// of the home-indicator inset or the on-screen keyboard. It is max(), not a
+// sum: the keyboard already pads itself by the home-indicator inset
+// (TouchKeyboard.tsx), so adding both would count that inset twice.
+// `top` centres the box inside exactly that area.
+//
+// scroll-padding: the action rows in these dialogs are `sticky bottom-0`
+// (~5.5rem tall, and pinned ~1.5rem above the box's bottom edge by the
+// box's own p-6 -- measured 89px + 24px = 113px in Chromium, hence 7.5rem).
+// Reserving that much at the bottom of the scrollport means
+// any scrollIntoView (a field gaining focus, or TouchKeyboard's
+// keep-the-focused-field-visible nudge) stops ABOVE the pinned
+// "Complete sale"/"Send link" row instead of parking the field behind it.
+const DIALOG_BOTTOM_OBSTRUCTION = "max(var(--safe-area-bottom, 0px), var(--touch-keyboard-height, 0px))";
 function keyboardAwareContentStyle(): React.CSSProperties {
   return {
-    top: "calc(50% - var(--touch-keyboard-height, 0px) / 2)",
-    maxHeight: "calc(100dvh - 2rem - var(--touch-keyboard-height, 0px))",
+    top: `calc(50% + (var(--safe-area-top, 0px) - ${DIALOG_BOTTOM_OBSTRUCTION}) / 2)`,
+    maxHeight: `calc(var(--app-height, 100vh) - 2rem - var(--safe-area-top, 0px) - ${DIALOG_BOTTOM_OBSTRUCTION})`,
     overflowY: "auto",
+    overscrollBehavior: "contain",
+    scrollPaddingTop: "1rem",
+    // Overridden to ~0 in index.css where those rows stop being sticky.
+    scrollPaddingBottom: "var(--dialog-scroll-padding-bottom, 7.5rem)",
   };
 }
 

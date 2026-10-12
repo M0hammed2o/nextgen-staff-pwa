@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
@@ -127,5 +127,67 @@ describe("BottomNav — Stocktake/Wastage/Loyalty entitlement gating", () => {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(screen.queryByText("Wastage")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Mobile/PWA viewport hardening: --bottom-nav-height must be the nav's real
+ * on-screen (border-box) height. It used to come from contentRect, which
+ * excludes the bar's own `safe-bottom` padding (the iPhone home-indicator
+ * inset) and border-t, so pages reserved ~35px too little on a notched phone.
+ * Same fake-ResizeObserver technique as src/test/TouchKeyboard.test.tsx.
+ */
+describe("BottomNav — --bottom-nav-height measurement", () => {
+  class FakeResizeObserver {
+    static instances: FakeResizeObserver[] = [];
+    callback: ResizeObserverCallback;
+    target: Element | null = null;
+    constructor(cb: ResizeObserverCallback) {
+      this.callback = cb;
+      FakeResizeObserver.instances.push(this);
+    }
+    observe(el: Element) {
+      this.target = el;
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  let original: typeof window.ResizeObserver;
+
+  beforeEach(() => {
+    original = window.ResizeObserver;
+    FakeResizeObserver.instances = [];
+    window.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
+    document.documentElement.style.removeProperty("--bottom-nav-height");
+  });
+  afterEach(() => {
+    window.ResizeObserver = original;
+  });
+
+  function fire(entry: Partial<ResizeObserverEntry>) {
+    const observer = FakeResizeObserver.instances.at(-1)!;
+    act(() => {
+      observer.callback([entry as ResizeObserverEntry], observer as unknown as ResizeObserver);
+    });
+  }
+
+  it("publishes the border-box height (safe-area padding + border included), not contentRect", () => {
+    mockApi({ inventoryEnabled: false, stocktakeTab: false, loyaltyEnabled: false });
+    renderBottomNav();
+    // 66px of content, 34px home-indicator padding, 1px border-t.
+    fire({
+      contentRect: { height: 66 } as DOMRectReadOnly,
+      borderBoxSize: [{ blockSize: 101, inlineSize: 390 }] as unknown as ResizeObserverSize[],
+    });
+    expect(document.documentElement.style.getPropertyValue("--bottom-nav-height")).toBe("101px");
+  });
+
+  it("falls back to offsetHeight when borderBoxSize isn't populated (some WebKit versions)", () => {
+    mockApi({ inventoryEnabled: false, stocktakeTab: false, loyaltyEnabled: false });
+    renderBottomNav();
+    const nav = screen.getByRole("navigation");
+    Object.defineProperty(nav, "offsetHeight", { configurable: true, value: 101 });
+    fire({ contentRect: { height: 66 } as DOMRectReadOnly, borderBoxSize: undefined });
+    expect(document.documentElement.style.getPropertyValue("--bottom-nav-height")).toBe("101px");
   });
 });

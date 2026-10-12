@@ -169,23 +169,108 @@
   }
 }
 
+/* ── App-shell viewport (mobile / installed PWA) ───────────────────────
+   --app-height is the height of the VISIBLE viewport: 100dvh where the
+   browser supports it (it shrinks/grows with the mobile browser toolbars and
+   is the real usable height of an installed PWA), plain 100vh otherwise.
+   Declared once here, with the fallback, so no component has to repeat it
+   (a bare `100dvh` in an inline style is simply dropped by browsers that
+   don't know the unit, e.g. iOS < 15.4 -- which is how the dialog cap in
+   components/ui/dialog.tsx used to silently disappear there).
+
+   --safe-area-* are the ONLY place this app reads env(safe-area-inset-*)
+   (index.html sets viewport-fit=cover, so content can otherwise draw under
+   the iPhone status bar/Dynamic Island, home indicator and landscape notch).
+   Everything else uses these variables, which keeps each inset counted
+   exactly once and lets the Playwright viewport suite simulate a notched
+   phone by overriding them (headless Chromium always reports 0). */
+@layer base {
+  :root {
+    --app-height: 100vh;
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+    /* Defaults for the variables BottomNav/TouchKeyboard publish at runtime. */
+    --bottom-nav-height: 0px;
+  }
+  @supports (height: 100dvh) {
+    :root {
+      --app-height: 100dvh;
+    }
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
   }
+  html {
+    /* Window-level scrollIntoView (focusing a field, the TouchKeyboard's
+       keep-the-field-visible nudge) treats the area under the fixed
+       on-screen keyboard and bottom nav as off-screen, instead of parking
+       the field right behind them. */
+    /* max(): the keyboard and the nav each already include the
+       home-indicator inset, and are never shown together (BottomNav hides
+       while the keyboard is up); with neither shown, the inset itself. */
+    scroll-padding-top: var(--safe-area-top);
+    scroll-padding-bottom: max(
+      var(--safe-area-bottom),
+      calc(var(--touch-keyboard-height, 0px) + var(--bottom-nav-height, 0px))
+    );
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-width: 0;
+  }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    margin: 0;
+    /* Safety net only: the viewport suite still asserts scrollWidth, so real
+       horizontal overflow is caught in tests rather than hidden by this. */
+    overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior: none;
+  }
+  #root {
+    min-height: var(--app-height);
+    /* Landscape notch: keep page content out of the left/right insets.
+       Fixed chrome (nav, dialogs, keyboard) is positioned against the
+       viewport, not #root, and handles its own insets. */
+    padding-left: var(--safe-area-left);
+    padding-right: var(--safe-area-right);
   }
 }
 
 @layer utilities {
   .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--safe-area-bottom);
   }
   .safe-top {
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: var(--safe-area-top);
+  }
+  /* min-h-screen / h-screen replacements that follow the visible viewport. */
+  .min-h-app {
+    min-height: var(--app-height);
+  }
+  /* Full-screen centred screens (login, loading, error) whose content can
+     be taller than a short phone: keep it out of the status-bar and
+     home-indicator areas while still letting it scroll. */
+  .safe-y {
+    padding-top: max(2.5rem, calc(var(--safe-area-top) + 1rem));
+    padding-bottom: max(2.5rem, calc(var(--safe-area-bottom) + 1rem));
+  }
+  /* Space a page reserves at its bottom so its last content scrolls clear
+     of the fixed BottomNav. --bottom-nav-height is the nav's REAL border-box
+     height (safe-area inset included, see BottomNav.tsx), so no extra
+     env(safe-area-inset-bottom) is added here -- that would count it twice.
+     It is 0px whenever the nav is hidden (login, order detail, keyboard). */
+  .pb-nav {
+    padding-bottom: calc(var(--bottom-nav-height) + 1.5rem);
   }
 }
 
@@ -206,4 +291,20 @@
 body.touch-keyboard-open {
   padding-bottom: var(--touch-keyboard-height);
   transition: padding-bottom 150ms ease-out;
+}
+
+/* Landscape phones only (<=500px tall) while the on-screen keyboard is up:
+   the dialogs' `sticky bottom-0` action rows (PaymentDialog, CashupDialog,
+   ItemOptionsDialog, ReceiptSendDialog -- ~88px each) would otherwise fill
+   most of the ~100-160px of dialog left above the keyboard and sit on top of
+   the very field being typed into. They become ordinary rows at the end of
+   the dialog's scroll area there: the field wins the space, and the action
+   is one short scroll away. Normal-height screens are unaffected. */
+@media (max-height: 500px) {
+  body.touch-keyboard-open [role="dialog"] .sticky.bottom-0 {
+    position: static;
+  }
+  body.touch-keyboard-open {
+    --dialog-scroll-padding-bottom: 0.5rem;
+  }
 }

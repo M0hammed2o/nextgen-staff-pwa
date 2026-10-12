@@ -41,7 +41,7 @@ export default function Pos() {
   // deliberate header rather than an empty space.
   const { displayName, branchName } = useBrand();
   const brandName = displayName?.trim() || user?.business_name || "NextGen Restaurant OS";
-  const { close: closeTouchKeyboard } = useTouchKeyboardContext();
+  const { close: closeTouchKeyboard, active: touchKeyboardActive } = useTouchKeyboardContext();
   // Persistent side-cart (landscape POS terminals) vs mobile-style full-width
   // cart dialog (any portrait viewport, whatever its width) — see
   // src/lib/pos-layout.ts and KNOWN_BUGS.md for why this can't be a bare
@@ -608,8 +608,9 @@ export default function Pos() {
     // width with a landscape terminal but needs the OTHER (mobile-style)
     // layout entirely, not just a narrower cart (see KNOWN_BUGS.md).
     // The `min-h-0` override is load-bearing whenever isLandscapePOS is
-    // true: the base `min-h-screen` (needed for the normally-scrolling
-    // mobile-style layout) sets a min-height of 100vh, which previously
+    // true: the base `min-h-screen` (now `min-h-app`, needed for the
+    // normally-scrolling mobile-style layout) sets a full-viewport
+    // min-height, which previously
     // silently WON over the explicit `h-[...]` rule below whenever the
     // keyboard was open (min-height always wins over a smaller explicit
     // height) — the container never actually shrank, so content stayed
@@ -618,13 +619,24 @@ export default function Pos() {
     // (BottomNav.tsx) for the always-`fixed` bottom nav in this layout too —
     // reserving none at all left only a ~5px sliver of the Checkout button
     // tappable above the nav at 1366x768/1024x768.
+    // Mobile/PWA viewport hardening: heights use --app-height (100dvh with a
+    // 100vh fallback, index.css) -- 100vh is taller than the visible area in
+    // a mobile browser, which pushed the side-cart's Checkout under the
+    // browser toolbar. The mobile-style layout's bottom padding is derived
+    // from the measured nav height plus the floating cart bar (when shown)
+    // instead of a fixed pb-28 that was shorter than nav + bar, which hid
+    // the last row of tiles behind the bar.
     <div
       className={cn(
-        "min-h-screen bg-background pb-28",
-        isLandscapePOS && "min-h-0 flex h-[calc(100vh-var(--touch-keyboard-height,0px))] flex-col pb-[var(--bottom-nav-height,0px)]"
+        "min-h-app bg-background",
+        !isLandscapePOS && (cart.length > 0 ? "pb-[calc(var(--bottom-nav-height)+5.5rem)]" : "pb-nav"),
+        isLandscapePOS && "min-h-0 flex h-[calc(var(--app-height)-var(--touch-keyboard-height,0px))] flex-col pb-[var(--bottom-nav-height,0px)]"
       )}
     >
-      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top">
+      {/* Not sticky on a short (landscape phone) screen: at ~375px tall this
+          header is half the viewport, and pinning it hid the menu tiles
+          scrolled up underneath it. It still scrolls normally there. */}
+      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top [@media(max-height:500px)]:static">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           {/* The restaurant leads, the screen name follows: a cashier should
               see whose till this is, not which SaaS product it belongs to.
@@ -907,9 +919,20 @@ export default function Pos() {
           closed). The cart is frozen: the only way out is checking with the
           server, using the exact same order and idempotency key that was
           already sent, never a fresh one. See handleRecoverySubmit(). */}
+      {/* Both overlays below: the card is capped to the overlay's padded box
+          and scrolls, so on a short/landscape phone "Check now" / "New sale"
+          can always be scrolled to instead of being cut off; the padding keeps
+          it out of the status-bar/home-indicator insets (and, for the z-50
+          success overlay, above the z-50 bottom nav that paints over it). */}
       {submissionState.status === "in_flight" && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl">
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+          style={{
+            paddingTop: "max(1rem, var(--safe-area-top))",
+            paddingBottom: "max(1rem, var(--safe-area-bottom))",
+          }}
+        >
+          <div className="max-h-full w-full max-w-sm overflow-y-auto rounded-2xl bg-card p-6 shadow-xl">
             <div className="flex flex-col items-center gap-2 text-center">
               <Loader2 className="h-10 w-10 animate-spin text-primary" />
               <h2 className="text-lg font-bold text-foreground">Checking your last sale…</h2>
@@ -946,8 +969,14 @@ export default function Pos() {
 
       {/* Success overlay after a completed sale */}
       {lastOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          style={{
+            paddingTop: "max(1rem, var(--safe-area-top))",
+            paddingBottom: "calc(max(var(--bottom-nav-height), var(--safe-area-bottom)) + 1rem)",
+          }}
+        >
+          <div className="max-h-full w-full max-w-sm overflow-y-auto rounded-2xl bg-card p-6 shadow-xl">
             <div className="flex flex-col items-center gap-2 text-center">
               <PartyPopper className="h-10 w-10 text-primary" />
               <h2 className="text-lg font-bold text-foreground">Sale complete</h2>
@@ -1082,7 +1111,17 @@ export default function Pos() {
       {!isLandscapePOS && cart.length > 0 && (
         <button
           onClick={() => setMobileCartOpen(true)}
-          className="fixed bottom-20 left-4 right-4 z-40 flex items-center justify-between rounded-xl bg-primary px-5 py-4 text-primary-foreground shadow-lg"
+          // Positioned from the nav's MEASURED height (BottomNav.tsx), not a
+          // fixed bottom-20 (80px): the nav is ~67px plus the home-indicator
+          // inset, ~101px on a notched iPhone, which covered the lower part
+          // of this bar. Falls back to the safe-area inset when the nav is
+          // hidden.
+          style={{
+            bottom: "calc(max(var(--bottom-nav-height), var(--safe-area-bottom)) + 0.75rem)",
+            left: "calc(1rem + var(--safe-area-left))",
+            right: "calc(1rem + var(--safe-area-right))",
+          }}
+          className="fixed z-40 flex min-w-0 items-center justify-between gap-3 rounded-xl bg-primary px-5 py-4 text-primary-foreground shadow-lg"
         >
           <span className="flex items-center gap-2 text-sm font-semibold">
             <ShoppingBag className="h-5 w-5" />
@@ -1092,12 +1131,28 @@ export default function Pos() {
         </button>
       )}
 
+      {/* Height comes from DialogContent's own viewport-aware cap
+          (components/ui/dialog.tsx). Previously `max-h-[90vh]` here was
+          silently overridden by that inline cap, while the inner
+          `max-h-[85vh]` (100vh-based, taller than the visible area in a
+          mobile browser) made two nested scroll regions and left Checkout at
+          the very bottom of a long scroll. With the keyboard closed the
+          dialog is a flex column, so CartPanel's own layout applies: its
+          line items scroll and Total + Checkout stay pinned in view. While
+          the on-screen keyboard is open there may be only ~200px of dialog
+          left on a short phone, so the whole panel scrolls as one region
+          instead (the focused field must win that space, not the totals). */}
       <Dialog open={!isLandscapePOS && mobileCartOpen} onOpenChange={setMobileCartOpen}>
-        <DialogContent className="max-h-[90vh] overflow-hidden p-0">
+        <DialogContent
+          className={cn("p-0", !touchKeyboardActive && "flex flex-col")}
+          style={touchKeyboardActive ? undefined : { overflowY: "hidden" }}
+        >
           <DialogHeader className="p-4 pb-0">
             <DialogTitle className="sr-only">Current order</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[85vh] overflow-y-auto" style={mobileCartKeyboardSpacer}>{cartPanel}</div>
+          <div className={cn(!touchKeyboardActive && "flex min-h-0 flex-1 flex-col")} style={mobileCartKeyboardSpacer}>
+            {cartPanel}
+          </div>
         </DialogContent>
       </Dialog>
 

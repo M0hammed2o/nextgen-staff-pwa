@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { isLandscapePOSLayout, POS_LANDSCAPE_MIN_WIDTH_PX } from "@/lib/pos-layout";
+import { isLandscapePOSLayout, POS_LANDSCAPE_MIN_HEIGHT_PX, POS_LANDSCAPE_MIN_WIDTH_PX } from "@/lib/pos-layout";
 
 /**
  * True when the POS should show its persistent, landscape-tuned side-cart
@@ -25,14 +25,17 @@ export function useIsLandscapePOS(): boolean {
 
     const widthQuery = window.matchMedia(`(min-width: ${POS_LANDSCAPE_MIN_WIDTH_PX}px)`);
     const orientationQuery = window.matchMedia("(orientation: landscape)");
+    const heightQuery = window.matchMedia(`(min-height: ${POS_LANDSCAPE_MIN_HEIGHT_PX}px)`);
     widthQuery.addEventListener("change", update);
     orientationQuery.addEventListener("change", update);
+    heightQuery.addEventListener("change", update);
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
 
     return () => {
       widthQuery.removeEventListener("change", update);
       orientationQuery.removeEventListener("change", update);
+      heightQuery.removeEventListener("change", update);
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
     };

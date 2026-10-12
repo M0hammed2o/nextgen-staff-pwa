@@ -6,6 +6,7 @@ import type { StaffDirectoryEntry } from "@/types";
 import PinKeypad from "@/components/PinKeypad";
 import InputModeToggle from "@/components/InputModeToggle";
 import { useTouchField } from "@/hooks/useTouchField";
+import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
 import logo from "@/assets/logo.jpeg";
 import { PoweredByNextGen, RestaurantIdentity, RestaurantMark } from "@/components/RestaurantIdentity";
 
@@ -34,6 +35,16 @@ export default function Login() {
   const [step, setStep] = useState<"setup" | "staff" | "pin">(
     savedBusiness ? "staff" : "setup"
   );
+
+  // The store-code field's on-screen keyboard belongs to the "setup" step
+  // only. This page stays mounted (same /login route) across all three
+  // steps, so the field unmounting did not close it: the QWERTY keyboard
+  // stayed up over the staff list and PIN pad, covering the PIN pad's
+  // 7-8-9/0 rows on every phone-sized screen (Playwright viewport suite).
+  const { close: closeTouchKeyboard } = useTouchKeyboardContext();
+  useEffect(() => {
+    if (step !== "setup") closeTouchKeyboard();
+  }, [step, closeTouchKeyboard]);
 
   const loadStaff = useCallback(async (code: string) => {
     setError("");
@@ -131,7 +142,7 @@ export default function Login() {
   // ── Step 1: Business Code entry (first-time device setup) ─────────────────
   if (step === "setup") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-10">
+      <div className="flex min-h-app flex-col items-center justify-center bg-background px-6 safe-y">
         <div className="w-full max-w-sm">
           <div className="rounded-2xl border border-border bg-card p-8 shadow-md space-y-8">
           {/* The only screen that stays NextGen-branded: at this point no
@@ -200,7 +211,7 @@ export default function Login() {
   // ── Step 2: Pick your name ─────────────────────────────────────────────────
   if (step === "staff") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-10">
+      <div className="flex min-h-app flex-col items-center justify-center bg-background px-6 safe-y">
         <div className="w-full max-w-sm">
           <div className="rounded-2xl border border-border bg-card p-8 shadow-md space-y-8">
           <div className="flex flex-col items-center gap-4">
@@ -262,7 +273,7 @@ export default function Login() {
 
   // ── Step 3: PIN entry for the selected staff member ───────────────────────
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-10">
+    <div className="flex min-h-app flex-col items-center justify-center bg-background px-6 safe-y">
       <div className="w-full max-w-sm">
         <div className="rounded-2xl border border-border bg-card p-8 shadow-md space-y-8">
         {/* The screen a cashier sees at the start of every shift, and the one

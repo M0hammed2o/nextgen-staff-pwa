@@ -139,7 +139,17 @@ export default function BottomNav() {
     }
     const el = navRef.current;
     const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
+      const entry = entries[0];
+      if (!entry) return;
+      // Border box, NOT contentRect: contentRect excludes this bar's own
+      // padding (`safe-bottom`, i.e. the iPhone home-indicator inset) and its
+      // border-t, so it under-reported the bar by ~35px on a notched phone
+      // and the Checkout bar / Stocktake actions / last list row sat partly
+      // behind the nav. Same fix, same fallback, as TouchKeyboard.tsx's
+      // --touch-keyboard-height (offsetHeight also includes padding/border,
+      // for WebKit versions that don't populate borderBoxSize). Pages use
+      // this value as-is and never add the safe-area inset again.
+      const h = entry.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight;
       if (h) root.style.setProperty("--bottom-nav-height", `${Math.ceil(h)}px`);
     });
     ro.observe(el);
@@ -154,7 +164,12 @@ export default function BottomNav() {
   const tabs = TABS.filter((t) => !t.enabled || t.enabled(settings));
 
   return (
-    <nav ref={navRef} className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
+    <nav
+      ref={navRef}
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom"
+      // Landscape notch: keep the outermost tabs out of the left/right insets.
+      style={{ paddingLeft: "var(--safe-area-left)", paddingRight: "var(--safe-area-right)" }}
+    >
       <div className="mx-auto flex max-w-lg">
         {tabs.map((tab) => (
           <NavLink

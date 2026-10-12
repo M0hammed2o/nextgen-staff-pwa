@@ -29,7 +29,13 @@ export default defineConfig(({ mode }) => ({
         theme_color: "#F7F7F5",
         background_color: "#F7F7F5",
         display: "standalone",
-        orientation: "portrait",
+        // "any", not "portrait": an installed PWA follows the device. The
+        // till has a dedicated landscape-terminal layout (src/lib/pos-layout.ts)
+        // that a portrait lock made unreachable on an installed tablet/terminal,
+        // and landscape phones are now covered by the mobile layout and by the
+        // landscape cases in e2e-tests/tests/staff-mobile-viewport.spec.ts
+        // (844x390, 915x412, 667x375). No staff workflow needs portrait.
+        orientation: "any",
         start_url: "/",
         icons: [
           {

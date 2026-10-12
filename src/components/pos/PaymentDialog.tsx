@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Split, X } from "lucide-react";
 import type { POSPaymentMethod, POSSettings, POSSplitPaymentMethod, POSCheckoutPaymentPayload, PaymentIntent, PaymentIntentStatus, PaymentIntentWhatsAppStatus } from "@/types";
@@ -203,6 +203,16 @@ export default function PaymentDialog({
     setBlockingNotice(null);
     setResumeError(null);
   }, [step]);
+
+  // Presentation only: every payment step starts at the top of the dialog's
+  // own scroll area. On a short (landscape phone) screen the dialog scrolls,
+  // and the scroll position used to carry over from the previous step -- the
+  // Cash step then opened already scrolled down, with its "Cash received"
+  // field hidden behind the sticky Complete-sale row.
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [step, splitCashPhase]);
 
   const cashTenderedCents = Math.round((parseFloat(cashInput || "0") || 0) * 100);
   const changeDueCents = cashTenderedCents - totalCents;
@@ -522,7 +532,7 @@ export default function PaymentDialog({
           scrolls internally). The action-button rows below are additionally
           pinned with `sticky bottom-0` so "Complete sale" never requires
           scrolling to reach even on a very tall payment form. */}
-      <DialogContent>
+      <DialogContent ref={contentRef}>
         <DialogHeader>
           <DialogTitle>
             {step === "method" && "Select payment method"}

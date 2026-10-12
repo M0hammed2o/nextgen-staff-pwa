@@ -69,7 +69,7 @@ export default function Loyalty() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 pb-28">
+    <div className="min-h-app bg-background p-4 pb-nav">
       <header className="safe-top">
         <h1 className="text-xl font-bold text-foreground">Loyalty</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -84,7 +84,10 @@ export default function Loyalty() {
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           placeholder="Customer phone number"
           inputMode={phoneTouch.touchActive ? undefined : "tel"}
-          className="h-12 flex-1 rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+          // min-w-0: an <input>'s intrinsic width (~20ch) is its flex
+          // min-width by default, which pushed the Search button 23px off a
+          // 320px screen (page 343px wide). It now shrinks instead.
+          className="h-12 min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-sm text-foreground"
           {...phoneTouch.fieldProps}
         />
         <button

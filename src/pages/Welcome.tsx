@@ -28,7 +28,7 @@ export default function Welcome() {
   const firstName = user?.staff_name?.trim().split(/\s+/)[0] ?? "there";
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background gap-2">
+    <div className="flex min-h-app flex-col items-center justify-center bg-background gap-2">
       <p className="text-lg text-muted-foreground">Welcome,</p>
       <h1 className="text-5xl font-bold text-foreground tracking-tight">{firstName}</h1>
     </div>

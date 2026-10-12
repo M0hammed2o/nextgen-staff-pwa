@@ -95,8 +95,12 @@ export default function CartPanel({
   const discountReasonTouch = useTouchField({ value: discountReason, onChange: onDiscountReasonChange, layout: "QWERTY", maxLength: 100 });
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    // min-h-0: lets this column shrink inside a height-capped flex parent
+    // (Pos.tsx's mobile cart dialog) so the line-item region scrolls and the
+    // totals/Checkout footer stays pinned, rather than the whole panel
+    // overflowing. No effect in the side panel, which already sizes it.
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
         <h2 className="text-base font-bold text-foreground">Current order</h2>
 
         {lines.length === 0 ? (

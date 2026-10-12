@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background px-6 text-center">
+      <div className="flex min-h-app flex-col items-center justify-center gap-6 bg-background px-6 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
           <svg
             xmlns="http://www.w3.org/2000/svg"

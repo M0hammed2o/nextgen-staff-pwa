@@ -118,7 +118,7 @@ export default function LiveOrders() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="min-h-app bg-background pb-nav">
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-4">
           <div>

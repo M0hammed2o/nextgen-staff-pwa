@@ -17,6 +17,19 @@
  */
 export const POS_LANDSCAPE_MIN_WIDTH_PX = 768;
 
+/**
+ * A phone turned sideways (844x390, 915x412, 932x430) clears the width
+ * floor and is landscape, but it is not a terminal: with the fixed-height
+ * side-cart layout its ~180px header and the ~67px bottom nav left roughly
+ * 70px of menu and ZERO visible cart lines (only Total/Checkout) -- found by
+ * the Playwright viewport suite (e2e-tests/tests/staff-mobile-viewport.spec.ts).
+ * Below this height the normally-scrolling mobile layout (floating cart bar
+ * + cart dialog) is used instead. Every real terminal/tablet target
+ * (1024x768, 1366x768, 1280x800, 1024x600) is well above it; landscape
+ * phones top out around 430px.
+ */
+export const POS_LANDSCAPE_MIN_HEIGHT_PX = 500;
+
 export function isLandscapePOSLayout(width: number, height: number): boolean {
-  return width >= POS_LANDSCAPE_MIN_WIDTH_PX && width >= height;
+  return width >= POS_LANDSCAPE_MIN_WIDTH_PX && height >= POS_LANDSCAPE_MIN_HEIGHT_PX && width >= height;
 }

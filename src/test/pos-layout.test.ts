@@ -41,4 +41,23 @@ describe("isLandscapePOSLayout", () => {
   it("a landscape tablet just above the floor (1024x800, unusually tall bezel) IS landscape", () => {
     expect(isLandscapePOSLayout(1024, 800)).toBe(true);
   });
+
+  // Mobile/PWA viewport hardening: phones turned sideways clear the width
+  // floor but are far too short for the fixed-height side-cart layout.
+  it.each([
+    [844, 390],
+    [915, 412],
+    [932, 430],
+  ])("a landscape PHONE (%ix%i) is NOT landscape POS layout (below the height floor)", (w, h) => {
+    expect(isLandscapePOSLayout(w, h)).toBe(false);
+  });
+
+  it("a short 7-inch landscape tablet (1024x600) still IS landscape POS layout", () => {
+    expect(isLandscapePOSLayout(1024, 600)).toBe(true);
+  });
+
+  it("the height floor is inclusive (768x500 counts, 768x499 does not)", () => {
+    expect(isLandscapePOSLayout(768, 500)).toBe(true);
+    expect(isLandscapePOSLayout(768, 499)).toBe(false);
+  });
 });

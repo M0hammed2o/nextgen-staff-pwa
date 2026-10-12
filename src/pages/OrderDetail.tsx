@@ -105,7 +105,7 @@ export default function OrderDetail() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex min-h-app items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
@@ -113,7 +113,7 @@ export default function OrderDetail() {
 
   if (error || !order) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
+      <div className="flex min-h-app flex-col items-center justify-center gap-4 bg-background">
         <p className="text-sm text-destructive">Order not found</p>
         <button onClick={() => navigate(-1)} className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground">
           Go Back
@@ -128,7 +128,7 @@ export default function OrderDetail() {
     // on-screen keyboard on a plain, normally-scrolling page (no dialog),
     // so this still reserves room for it, same idea as
     // useTouchKeyboardSpacerStyle used inside dialogs.
-    <div className="min-h-screen bg-background" style={{ paddingBottom: "calc(2rem + var(--touch-keyboard-height, 0px))" }}>
+    <div className="min-h-app bg-background" style={{ paddingBottom: "calc(2rem + max(var(--touch-keyboard-height, 0px), var(--safe-area-bottom)))" }}>
       {/* Kitchen Slip (hidden, only rendered for printing) */}
       {showSlip && (
         <div className="fixed top-0 left-0 z-[9999]">

@@ -55,7 +55,7 @@ export default function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="min-h-app bg-background pb-nav">
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm safe-top">
         <div className="mx-auto max-w-lg px-4 py-4">
           <h1 className="text-xl font-bold text-foreground">Profile</h1>

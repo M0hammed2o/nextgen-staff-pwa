@@ -13,6 +13,29 @@ import { cn } from "@/lib/utils";
 // layouts) actually gets, is measured live below.
 const FALLBACK_KEYBOARD_HEIGHT_PX = 300;
 
+// Landscape phones (~375-430px tall). The full-size keyboard is ~325px tall
+// in every layout, which left a dialog above it only 30-50px -- not enough to
+// show even the field being typed into (Playwright viewport suite, 844x390 /
+// 667x375 / 915x412). On a screen this short the SAME 56px keys are arranged
+// flatter instead of being shrunk: the numeric pad becomes 6 columns x 2 rows,
+// and the QWERTY layout's Clear/Done move into its space-bar row.
+const SHORT_VIEWPORT_QUERY = "(max-height: 500px)";
+
+function useShortViewport(): boolean {
+  const [short, setShort] = useState<boolean>(
+    () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(SHORT_VIEWPORT_QUERY).matches
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia(SHORT_VIEWPORT_QUERY);
+    const update = () => setShort(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  return short;
+}
+
 const NUMERIC_ROWS = [
   ["1", "2", "3"],
   ["4", "5", "6"],
@@ -87,6 +110,7 @@ export default function TouchKeyboard() {
   const [caps, setCaps] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeight, setMeasuredHeight] = useState(FALLBACK_KEYBOARD_HEIGHT_PX);
+  const shortViewport = useShortViewport();
 
   // Measure the REAL rendered height (previously a single hardcoded
   // KEYBOARD_HEIGHT_PX=300 constant under-estimated it — the numeric
@@ -138,6 +162,51 @@ export default function TouchKeyboard() {
     };
   }, [active, measuredHeight]);
 
+  // Keep the field being edited on screen. Publishing the keyboard height
+  // shrinks every open dialog (components/ui/dialog.tsx) and pads the page,
+  // but nothing moved the focused field itself: on a short phone (320x568,
+  // QWERTY layout) the mobile cart's Name field ended up below the shrunken
+  // dialog's visible area, i.e. typed into while invisible. One nudge per
+  // field takeover / real height change, after the new height has applied.
+  // block "nearest" + the scroll-padding set on <html> (index.css) and on
+  // dialogs (dialog.tsx) lands it above the keyboard and above any sticky
+  // action row, and never scrolls when the field is already visible.
+  //
+  // Twice on purpose: once after the next frame (pages, which re-pad
+  // instantly) and once after the dialog has finished resizing --
+  // DialogContent's `duration-200` (transition-property defaults to `all`)
+  // animates its max-height/top over 200ms, and a nudge that only ran
+  // mid-animation saw the field as "already visible" in a box that was still
+  // shrinking (verified in Chromium: clientHeight 534 -> 411 -> 211).
+  useEffect(() => {
+    if (!active) return;
+    const nudge = () => {
+      const el = document.activeElement;
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
+      if (el.closest("[data-touch-keyboard-root]")) return;
+      if (typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    let raf = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      raf = requestAnimationFrame(nudge);
+      timer = setTimeout(nudge, 260);
+    };
+    schedule();
+    // Also on every re-focus while the keyboard stays up: tapping the SAME
+    // field again (same id, so this effect would not re-run) after it was
+    // scrolled partly behind a sticky action row must bring it back too.
+    document.addEventListener("focusin", schedule);
+    return () => {
+      document.removeEventListener("focusin", schedule);
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.id, measuredHeight]);
+
   // Reset transient QWERTY state whenever a different field takes over.
   useEffect(() => {
     setQwertyMode("letters");
@@ -182,7 +251,7 @@ export default function TouchKeyboard() {
 
   function renderNumericLike(rows: string[][]) {
     return (
-      <div className="mx-auto grid w-full max-w-sm grid-cols-3 gap-2">
+      <div className={cn("mx-auto grid w-full gap-2", shortViewport ? "max-w-2xl grid-cols-6" : "max-w-sm grid-cols-3")}>
         {rows.flat().map((key, i) => (
           <KeyButton
             key={`${key}-${i}`}
@@ -194,6 +263,24 @@ export default function TouchKeyboard() {
           />
         ))}
       </div>
+    );
+  }
+
+  // One definition for both placements (own row, or the short-screen QWERTY
+  // space-bar row) so the two can never drift apart.
+  function renderClearDone(inline: boolean) {
+    const height = inline ? "h-14" : "h-12";
+    return (
+      <>
+        <KeyButton label="clear" ariaLabel="Clear field" onPress={press} className={cn(height, "px-4 text-sm text-muted-foreground")} display="Clear" />
+        <KeyButton
+          label="done"
+          ariaLabel="Done"
+          onPress={press}
+          className={cn(height, inline ? "w-24" : "flex-1", "bg-brand px-4 text-sm font-semibold text-brand-foreground active:bg-brand-active")}
+          display="Done"
+        />
+      </>
     );
   }
 
@@ -231,6 +318,7 @@ export default function TouchKeyboard() {
             display={qwertyMode === "letters" ? "123" : "ABC"}
           />
           <KeyButton label="space" ariaLabel="Space" onPress={press} className="h-14 flex-1 max-w-xs text-sm" display="Space" />
+          {shortViewport && renderClearDone(true)}
         </div>
       </div>
     );
@@ -257,7 +345,7 @@ export default function TouchKeyboard() {
       // not affect pointer/click hit-testing (verified: Radix calls
       // `hideOthers`, not `suppressOthers`/`inertOthers`, so it never sets
       // the `inert` attribute, only `aria-hidden`).
-      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[90] border-t border-border bg-card px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.15)]"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[90] border-t border-border bg-card pb-[max(0.75rem,var(--safe-area-bottom))] pl-[max(0.75rem,var(--safe-area-left))] pr-[max(0.75rem,var(--safe-area-right))] pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.15)]"
       ref={rootRef}
       role="group"
       aria-label="On-screen keyboard"
@@ -269,10 +357,9 @@ export default function TouchKeyboard() {
           {active.layout === "PHONE" && renderNumericLike(PHONE_ROWS)}
           {active.layout === "QWERTY" && renderQwerty()}
         </div>
-        <div className="mt-2 flex justify-end gap-2">
-          <KeyButton label="clear" ariaLabel="Clear field" onPress={press} className="h-12 px-4 text-sm text-muted-foreground" display="Clear" />
-          <KeyButton label="done" ariaLabel="Done" onPress={press} className="h-12 flex-1 bg-brand px-4 text-sm font-semibold text-brand-foreground active:bg-brand-active" display="Done" />
-        </div>
+        {!(shortViewport && active.layout === "QWERTY") && (
+          <div className="mt-2 flex justify-end gap-2">{renderClearDone(false)}</div>
+        )}
       </div>
     </div>
   );

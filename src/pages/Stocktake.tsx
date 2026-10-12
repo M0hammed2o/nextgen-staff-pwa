@@ -270,7 +270,7 @@ export default function Stocktake() {
 
   if (!enabled) {
     return (
-      <div className="min-h-screen bg-background pb-28">
+      <div className="min-h-app bg-background pb-nav">
         <header className="border-b border-border bg-card px-4 py-4 safe-top">
           <h1 className="text-xl font-bold text-foreground">Stocktake</h1>
         </header>
@@ -282,7 +282,7 @@ export default function Stocktake() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-28">
+    <div className="min-h-app bg-background pb-nav">
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 px-4 py-4 backdrop-blur-sm safe-top">
         <h1 className="text-xl font-bold text-foreground">Stocktake</h1>
         <div className="mt-3 flex gap-2">
@@ -379,7 +379,16 @@ export default function Stocktake() {
               )}
             </ul>
 
-            <div className="sticky bottom-24 mt-4 flex gap-2 px-4">
+            {/* Pinned just above whatever covers the bottom of the screen: the
+                bottom nav (its measured height, safe-area inset included) or,
+                while a count field is being typed into, the on-screen keyboard
+                (the nav is hidden then, so the two never add up). A fixed
+                bottom-24 (96px) left these buttons partly behind the ~101px nav
+                on a notched iPhone, and behind the keyboard while typing. */}
+            <div
+              className="sticky mt-4 flex gap-2 px-4"
+              style={{ bottom: "calc(var(--bottom-nav-height) + var(--touch-keyboard-height, 0px) + 0.5rem)" }}
+            >
               <button
                 onClick={handleSave}
                 disabled={saveMutation.isPending}
