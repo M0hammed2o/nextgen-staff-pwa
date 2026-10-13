@@ -7,6 +7,7 @@ import PinKeypad from "@/components/PinKeypad";
 import InputModeToggle from "@/components/InputModeToggle";
 import { useTouchField } from "@/hooks/useTouchField";
 import { useTouchKeyboardContext } from "@/lib/touch-keyboard";
+import { SafeStorageError } from "@/lib/safe-storage";
 import logo from "@/assets/logo.jpeg";
 import { PoweredByNextGen, RestaurantIdentity, RestaurantMark } from "@/components/RestaurantIdentity";
 
@@ -91,10 +92,16 @@ export default function Login() {
       await login({ business_code: code, staff_id: selectedStaff.id, pin });
       navigate("/welcome", { replace: true });
     } catch (err: unknown) {
+      // A SafeStorageError means the PIN was correct and the backend
+      // accepted the login — the device just couldn't save the session
+      // locally (e.g. Safari on iPad under storage partitioning / private
+      // browsing). That is not a wrong PIN, and must never be shown as one.
       const msg =
-        err && typeof err === "object" && "message" in err
-          ? (err as { message: string }).message
-          : "Incorrect PIN. Please try again.";
+        err instanceof SafeStorageError
+          ? err.message
+          : err && typeof err === "object" && "message" in err
+            ? (err as { message: string }).message
+            : "Incorrect PIN. Please try again.";
       setError(msg);
       setPin("");
     } finally {

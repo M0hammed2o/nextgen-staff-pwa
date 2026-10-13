@@ -1,14 +1,20 @@
 import type { AuthTokens, SavedBusiness } from "@/types";
+import { safeGetItem, safeSetItem, safeRemoveItem } from "@/lib/safe-storage";
 
 const TOKEN_KEY = "nextgen_staff_tokens";
 const USER_KEY = "nextgen_staff_user";
 const BUSINESS_KEY = "nextgen_staff_business";
 
 // ── Token & User (cleared on logout) ─────────────────────────────────────────
+//
+// Every access here routes through safe-storage.ts's localStorage ->
+// sessionStorage -> in-memory fallback chain, so a storage throw (e.g.
+// Safari on iPad under storage partitioning / private browsing) can never
+// propagate up into the login flow and be mistaken for a wrong PIN.
 
 export function getStoredTokens(): AuthTokens | null {
   try {
-    const raw = localStorage.getItem(TOKEN_KEY);
+    const raw = safeGetItem(TOKEN_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -16,17 +22,17 @@ export function getStoredTokens(): AuthTokens | null {
 }
 
 export function storeTokens(tokens: AuthTokens): void {
-  localStorage.setItem(TOKEN_KEY, JSON.stringify(tokens));
+  safeSetItem(TOKEN_KEY, JSON.stringify(tokens));
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  safeRemoveItem(TOKEN_KEY);
+  safeRemoveItem(USER_KEY);
 }
 
 export function getStoredUser() {
   try {
-    const raw = localStorage.getItem(USER_KEY);
+    const raw = safeGetItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -34,7 +40,7 @@ export function getStoredUser() {
 }
 
 export function storeUser(user: unknown): void {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  safeSetItem(USER_KEY, JSON.stringify(user));
 }
 
 // ── Business Context ──────────────────────────────────────────────────────────
@@ -44,7 +50,7 @@ export function storeUser(user: unknown): void {
 
 export function getSavedBusiness(): SavedBusiness | null {
   try {
-    const raw = localStorage.getItem(BUSINESS_KEY);
+    const raw = safeGetItem(BUSINESS_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -52,16 +58,16 @@ export function getSavedBusiness(): SavedBusiness | null {
 }
 
 export function saveBusiness(business: SavedBusiness): void {
-  localStorage.setItem(BUSINESS_KEY, JSON.stringify(business));
+  safeSetItem(BUSINESS_KEY, JSON.stringify(business));
 }
 
 export function clearBusiness(): void {
-  localStorage.removeItem(BUSINESS_KEY);
+  safeRemoveItem(BUSINESS_KEY);
 }
 
 // Clears everything — used by "Change Store" to return to first-time setup.
 export function clearAll(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  localStorage.removeItem(BUSINESS_KEY);
+  safeRemoveItem(TOKEN_KEY);
+  safeRemoveItem(USER_KEY);
+  safeRemoveItem(BUSINESS_KEY);
 }

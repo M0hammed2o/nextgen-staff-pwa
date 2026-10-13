@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   getStoredTokens,
   storeTokens,
@@ -10,6 +10,7 @@ import {
   clearBusiness,
   clearAll,
 } from "@/lib/token-storage";
+import { __resetSafeStorageForTests } from "@/lib/safe-storage";
 import type { SavedBusiness } from "@/types";
 
 const MOCK_TOKENS = {
@@ -27,6 +28,8 @@ const MOCK_BUSINESS: SavedBusiness = {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
+  __resetSafeStorageForTests();
 });
 
 describe("token storage", () => {
@@ -107,5 +110,61 @@ describe("first-time vs returning device logic", () => {
 
     expect(getSavedBusiness()).toBeNull();
     expect(getStoredTokens()).toBeNull();
+  });
+});
+
+describe("token-storage routes writes/removes through safe-storage's fallback chain", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("storeTokens survives a localStorage.setItem throw by falling back to sessionStorage, and getStoredTokens still reads it back", () => {
+    const realSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key,
+      value
+    ) {
+      if (this === localStorage) throw new DOMException("QuotaExceededError");
+      realSetItem.call(this, key, value);
+    });
+
+    // Previously this call hit localStorage.setItem directly with no
+    // try/catch, so the throw above would have propagated straight out of
+    // storeTokens() into auth.tsx's login() and then Login.tsx's catch
+    // block. It must not throw at all now.
+    expect(() => storeTokens(MOCK_TOKENS)).not.toThrow();
+
+    expect(sessionStorage.getItem("nextgen_staff_tokens")).toBe(JSON.stringify(MOCK_TOKENS));
+    expect(getStoredTokens()).toEqual(MOCK_TOKENS);
+  });
+
+  it("storeUser and saveBusiness also survive a localStorage throw", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("SecurityError");
+    });
+
+    expect(() => storeUser({ id: "u1", staff_name: "Alice" })).not.toThrow();
+    expect(() => saveBusiness(MOCK_BUSINESS)).not.toThrow();
+
+    expect(getStoredUser()).toEqual({ id: "u1", staff_name: "Alice" });
+    expect(getSavedBusiness()).toEqual(MOCK_BUSINESS);
+  });
+
+  it("clearTokens/clearAll survive a localStorage.removeItem throw and still clear the in-use tier", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("SecurityError"); // force the memory tier
+    });
+    storeTokens(MOCK_TOKENS);
+    storeUser({ id: "u1" });
+    expect(getStoredTokens()).toEqual(MOCK_TOKENS);
+
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("SecurityError");
+    });
+
+    expect(() => clearAll()).not.toThrow();
+    expect(getStoredTokens()).toBeNull();
+    expect(getStoredUser()).toBeNull();
   });
 });
