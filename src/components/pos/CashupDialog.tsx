@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
+import type { ApiFetchError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isPosNotEnabledError } from "@/lib/pos-settings";
 import type { TillSession, TillOpenRequest, TillCloseRequest } from "@/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -71,7 +73,14 @@ export default function CashupDialog({ open, onClose }: Props) {
       // hand over a form there's nothing left to do on.
       handleDialogClose();
     },
-    onError: (err) => setError((err as { message?: string })?.message ?? "Could not open the till"),
+    onError: (err) => {
+      const apiErr = err as unknown as ApiFetchError;
+      // A WhatsApp-only tenant's staff can still reach this dialog by URL
+      // despite Till being hidden from the nav (BottomNav.tsx) — show the
+      // same honest, cashier-facing message Pos.tsx's own checkout error
+      // paths show, rather than the backend's raw 409 text.
+      setError(isPosNotEnabledError(apiErr) ? "POS is not available for this restaurant" : apiErr?.message ?? "Could not open the till");
+    },
     onSettled: () => {
       openInFlightRef.current = false;
     },
@@ -87,7 +96,10 @@ export default function CashupDialog({ open, onClose }: Props) {
       setResult(closed);
       closeTouchKeyboard();
     },
-    onError: (err) => setError((err as { message?: string })?.message ?? "Could not close the till"),
+    onError: (err) => {
+      const apiErr = err as unknown as ApiFetchError;
+      setError(isPosNotEnabledError(apiErr) ? "POS is not available for this restaurant" : apiErr?.message ?? "Could not close the till");
+    },
   });
 
   function handleOpenSubmit() {
