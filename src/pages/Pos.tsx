@@ -9,6 +9,7 @@ import type {
 import type { ReceiptDocument } from "@/types/receipt";
 import { fetchReceiptDocument } from "@/lib/receipts";
 import { listUnconsumedPaidPaymentIntents, formatIntentReceivedAt } from "@/lib/payment-intents";
+import { isPosNotEnabledError } from "@/lib/pos-settings";
 import ItemOptionsDialog from "@/components/pos/ItemOptionsDialog";
 import CartPanel, { lineTotalCents, type OrderMode } from "@/components/pos/CartPanel";
 import { previewLoyaltyDiscountCents } from "@/components/pos/LoyaltyRewardPicker";
@@ -505,7 +506,15 @@ export default function Pos() {
         // any of that, so no order exists under this key. Safe to go back to
         // idle and let the cashier fix the cart and retry with the same key.
         setSubmissionState({ status: "idle" });
-        setErrorMessage(apiErr?.message ?? "Could not complete the sale — try again");
+        // A WhatsApp-only tenant's staff can still reach this screen by URL
+        // despite Till being hidden from the nav (BottomNav.tsx) — show a
+        // specific, honest message rather than the backend's generic 409
+        // text, which isn't written for a cashier to read.
+        setErrorMessage(
+          isPosNotEnabledError(apiErr)
+            ? "POS is not available for this restaurant"
+            : apiErr?.message ?? "Could not complete the sale — try again"
+        );
       }
     } finally {
       setIsSubmitting(false);
@@ -534,7 +543,11 @@ export default function Pos() {
         // key (the idempotency check runs first, before this rejection could
         // have happened) — safe to unfreeze the cart.
         setSubmissionState({ status: "idle" });
-        setRecoveryError(apiErr?.message ?? "That sale could not be completed. Check the details and try again.");
+        setRecoveryError(
+          isPosNotEnabledError(apiErr)
+            ? "POS is not available for this restaurant"
+            : apiErr?.message ?? "That sale could not be completed. Check the details and try again."
+        );
       }
     } finally {
       setRecoverySubmitting(false);

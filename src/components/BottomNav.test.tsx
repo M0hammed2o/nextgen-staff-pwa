@@ -131,6 +131,55 @@ describe("BottomNav — Stocktake/Wastage/Loyalty entitlement gating", () => {
 });
 
 /**
+ * WhatsApp-only subscription (pos_enabled: false, no POS on this plan at
+ * all) — Till must be hidden, since every POS-write route 409s
+ * POS_NOT_ENABLED server-side and there is nothing useful to tap there.
+ * `pos_enabled` is intentionally absent from BASE_SETTINGS/mockApi above so
+ * every one of THOSE existing tests keeps proving the "field missing ->
+ * Till shown" default on its own, unchanged.
+ */
+describe("BottomNav — Till gating on pos_enabled (WhatsApp-only subscriptions)", () => {
+  function mockApiWithPosEnabled(posEnabled: boolean | undefined) {
+    getMock.mockReset();
+    getMock.mockImplementation((url: string) => {
+      if (url === "/v1/business/pos/settings") {
+        const settings: Record<string, unknown> = { ...BASE_SETTINGS };
+        if (posEnabled !== undefined) settings.pos_enabled = posEnabled;
+        return Promise.resolve(settings);
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+  }
+
+  it("pos_enabled: false -> Till is absent", async () => {
+    mockApiWithPosEnabled(false);
+    renderBottomNav();
+    // Till defaults to shown while settings are still loading (the same
+    // fail-toward-current-behaviour default as a response with the field
+    // missing), so this must wait for the settled, loaded state rather than
+    // asserting immediately after the fetch is merely called.
+    await waitFor(() => expect(screen.queryByText("Till")).not.toBeInTheDocument());
+    // Nothing else about the nav changes.
+    expect(screen.getByText("Live Orders")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText("Profile")).toBeInTheDocument();
+  });
+
+  it("pos_enabled: true -> Till is present (explicit, same as the default)", async () => {
+    mockApiWithPosEnabled(true);
+    renderBottomNav();
+    await waitFor(() => expect(screen.getByText("Till")).toBeInTheDocument());
+  });
+
+  it("pos_enabled absent (older/cached response that predates this field) -> Till still shown, fails toward CURRENT behaviour", async () => {
+    mockApiWithPosEnabled(undefined);
+    renderBottomNav();
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith("/v1/business/pos/settings"));
+    expect(screen.getByText("Till")).toBeInTheDocument();
+  });
+});
+
+/**
  * Mobile/PWA viewport hardening: --bottom-nav-height must be the nav's real
  * on-screen (border-box) height. It used to come from contentRect, which
  * excludes the bar's own `safe-bottom` padding (the iPhone home-indicator
