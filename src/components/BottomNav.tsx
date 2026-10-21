@@ -10,9 +10,11 @@ interface Tab {
   label: string;
   icon: JSX.Element;
   /**
-   * Whether this tenant shows the tab. Undefined means "always" — Till,
-   * Completed and Profile are not configurable, since a staff app with no
-   * till and no way to sign out is not a staff app.
+   * Whether this tenant shows the tab. Undefined means "always" — Completed
+   * and Profile are not configurable, since a staff app with no way to sign
+   * out is not a staff app. Till used to be unconditional too, until the
+   * WhatsApp-only subscription tier (no POS) made it possible for a tenant
+   * to have no till at all — see its own `enabled` below.
    */
   enabled?: (s: POSSettings | null) => boolean;
 }
@@ -36,6 +38,14 @@ const TABS: Tab[] = [
   {
     to: "/pos",
     label: "Till",
+    // WhatsApp-only subscriptions have no POS at all (every POS-write route
+    // 409s POS_NOT_ENABLED server-side) -- hide the tab so staff never land
+    // on a Till screen that can't actually ring anything up. Defaults to
+    // shown: `undefined` (a response that doesn't yet carry this field, or
+    // an older cached one) must fail toward the CURRENT behaviour -- Till
+    // visible for the overwhelming majority of tenants -- not toward hiding
+    // it for everyone.
+    enabled: (s) => s?.pos_enabled ?? true,
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />

@@ -203,6 +203,21 @@ describe("CashupDialog till-open success/failure/double-click", () => {
     expect(document.querySelector("[data-touch-keyboard-root]")).toBeInTheDocument();
   });
 
+  it("shows the honest 'POS is not available' message, not the backend's raw 409 text, when a WhatsApp-only tenant's staff opens this dialog by URL", async () => {
+    getMock.mockResolvedValue(null);
+    postMock.mockRejectedValue({ message: "POS is not enabled for this business.", status: 409, code: "POS_NOT_ENABLED" });
+    const onClose = vi.fn();
+    renderStatefulDialog(onClose);
+
+    const floatInput = await screen.findByLabelText("Opening float (R)");
+    fireEvent.change(floatInput, { target: { value: "500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Open till" }));
+
+    await screen.findByText("POS is not available for this restaurant");
+    expect(screen.queryByText("POS is not enabled for this business.")).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("a fast double-click on Open till only fires one POST request", async () => {
     getMock.mockResolvedValue(null);
     let resolvePost: (v: unknown) => void = () => {};

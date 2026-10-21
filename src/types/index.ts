@@ -441,6 +441,17 @@ export interface POSSettings {
   // the same as `false` (hide the option), never crash on it. See
   // PaymentDialog.tsx's split-payment "+ Add payment" method list.
   pay_by_link_enabled?: boolean;
+
+  // Whether this tenant's subscription includes POS at all ("WhatsApp-only"
+  // plans do not). Optional/possibly absent on older backend responses
+  // during rollout — treat `undefined` the same as `true` (POS enabled),
+  // never hide Till or break the landing redirect for every existing
+  // tenant just because a cached/older response doesn't carry this field
+  // yet. When `false`, every POS-write route (till open/close, order
+  // creation, payment intents, refund/void) 409s with `POS_NOT_ENABLED` —
+  // see BottomNav.tsx's Till gate, lib/pos-settings.ts::landingPath, and
+  // Pos.tsx::isPosNotEnabledError.
+  pos_enabled?: boolean;
 }
 
 // ── Inventory (staff-facing subset) ────────────────────────────────────────
