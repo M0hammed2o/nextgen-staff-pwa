@@ -452,6 +452,12 @@ export interface POSSettings {
   // see BottomNav.tsx's Till gate, lib/pos-settings.ts::landingPath, and
   // Pos.tsx::isPosNotEnabledError.
   pos_enabled?: boolean;
+
+  // Delivery marketplace module (Uber Eats). Gates the pending
+  // delivery-order queue on Live Orders (components/DeliveryQueue.tsx).
+  // Optional/possibly absent on older backend responses — `undefined` is
+  // treated as `false` (queue hidden, endpoint never called).
+  delivery_platforms_enabled?: boolean;
 }
 
 // ── Inventory (staff-facing subset) ────────────────────────────────────────

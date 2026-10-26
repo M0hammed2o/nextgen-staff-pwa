@@ -4,6 +4,7 @@ import { apiClient, createSSEConnection } from "@/lib/api";
 import type { Order, PaginatedResponse } from "@/types";
 import OrderCard from "@/components/OrderCard";
 import EmptyState from "@/components/EmptyState";
+import DeliveryQueue, { DELIVERY_QUEUE_KEY } from "@/components/DeliveryQueue";
 import { ShoppingBag } from "lucide-react";
 import { subscribeToPush } from "@/lib/push-notifications";
 
@@ -73,6 +74,8 @@ export default function LiveOrders() {
       "/v1/business/orders/live/stream",
       () => {
         queryClient.invalidateQueries({ queryKey: ["live-orders"] });
+        // Delivery-platform alerts arrive on the same stream.
+        queryClient.invalidateQueries({ queryKey: DELIVERY_QUEUE_KEY });
       },
       () => {
         // All retries exhausted — polling (refetchInterval: 15s) takes over.
@@ -142,6 +145,7 @@ export default function LiveOrders() {
       </header>
 
       <div className="mx-auto max-w-lg px-4 py-4">
+        <DeliveryQueue onArrival={playNewOrderAlert} />
         {orders.length === 0 ? (
           <EmptyState
             icon={ShoppingBag}
