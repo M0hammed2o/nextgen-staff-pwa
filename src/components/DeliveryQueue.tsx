@@ -116,6 +116,11 @@ function DeliveryQueueCard({ item, now }: { item: DeliveryQueueItem; now: number
         )}
       </div>
 
+      {item.has_allergy_request && (
+        <p role="alert" className="mt-3 rounded-md bg-destructive px-3 py-2 text-sm font-bold text-destructive-foreground">
+          ALLERGY REQUEST — check every item below before accepting. Deny if the kitchen cannot make it safely.
+        </p>
+      )}
       {item.lines.length > 0 && (
         <ul className="mt-3 space-y-1 text-sm text-foreground">
           {item.lines.map((line, i) => (
@@ -125,6 +130,12 @@ function DeliveryQueueCard({ item, now }: { item: DeliveryQueueItem; now: number
                 <span className="text-muted-foreground">
                   {" — "}
                   {line.modifiers.map((m) => (m.removed ? `no ${m.title}` : m.title)).join(", ")}
+                </span>
+              )}
+              {((line.allergens?.length ?? 0) > 0 || line.allergy_instructions) && (
+                <span className="block text-sm font-bold text-destructive">
+                  ALLERGY:{(line.allergens?.length ?? 0) > 0 ? ` exclude ${line.allergens!.join(", ")}` : ""}
+                  {line.allergy_instructions ? ` "${line.allergy_instructions}"` : ""}
                 </span>
               )}
               {line.special_instructions && (

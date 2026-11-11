@@ -92,6 +92,25 @@ describe("DeliveryQueue", () => {
     );
   });
 
+  it("shows an allergy request prominently before staff accept (BUG-0189)", async () => {
+    setup({
+      queue: [queueItem({
+        has_allergy_request: true,
+        lines: [{ title: "Best Burger", quantity: 1, special_instructions: null, modifiers: [],
+                  allergens: ["Dairy", "Peanuts"], allergy_instructions: "anaphylactic" }],
+      })],
+    });
+    expect(await screen.findByText(/ALLERGY REQUEST/)).toBeInTheDocument();
+    expect(screen.getByText(/ALLERGY: exclude Dairy, Peanuts/)).toHaveTextContent('"anaphylactic"');
+    expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
+  });
+
+  it("shows no allergy banner for an order without one", async () => {
+    setup();
+    expect(await screen.findByText("Uber Eats #BC953")).toBeInTheDocument();
+    expect(screen.queryByText(/ALLERGY/)).not.toBeInTheDocument();
+  });
+
   it("never offers Accept for an order with items a manager has not mapped", async () => {
     setup({
       queue: [queueItem({

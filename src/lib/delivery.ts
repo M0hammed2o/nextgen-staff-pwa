@@ -14,6 +14,9 @@ export interface DeliveryQueueLine {
   title: string | null;
   quantity: number | null;
   special_instructions?: string | null;
+  /** BUG-0189: allergens the customer asked to exclude, and their allergy note. */
+  allergens?: string[];
+  allergy_instructions?: string | null;
   modifiers: { title: string | null; quantity: number | null; removed: boolean | null }[];
 }
 
@@ -27,6 +30,7 @@ export interface DeliveryQueueItem {
   accept_deadline_at: string | null;
   customer_first_name: string | null;
   special_instructions: string | null;
+  has_allergy_request?: boolean;
   lines: DeliveryQueueLine[];
   unresolved: string[];
   can_accept: boolean;
