@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { StaffUser, LoginRequest, LoginResponse, SavedBusiness } from "@/types";
 import { apiClient } from "@/lib/api";
+import type { ApiFetchError } from "@/lib/api";
+import { wipeLocalPosData } from "@/lib/offline/runtime";
 import {
   getStoredTokens,
   storeTokens,
@@ -18,7 +20,12 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (data: LoginRequest) => Promise<void>;
-  logout: () => Promise<void>;
+  /**
+   * Local POS data (synced queue entries, cached menu, training state) is
+   * wiped. Unsynced offline sales are KEPT unless `discardUnsynced` is true;
+   * callers must have asked for explicit confirmation before passing it.
+   */
+  logout: (opts?: { discardUnsynced?: boolean }) => Promise<void>;
   changeStore: () => void;
 }
 
@@ -38,7 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(u);
           storeUser(u);
         })
-        .catch(() => {
+        .catch((err: ApiFetchError | undefined) => {
+          // No HTTP response at all = we are offline (or the server is
+          // unreachable), NOT that the session is invalid. Keep the stored
+          // session so the till can still capture offline sales after a
+          // reload; the first real response will re-validate it.
+          if (err?.noResponse) return;
           clearTokens();
           setUser(null);
         })
@@ -65,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (opts?: { discardUnsynced?: boolean }) => {
     // Clear client-side session state first, then best-effort notify the
     // server -- apiClient has no request timeout anywhere, so awaiting the
     // revocation call before clearing local state risked a slow/hanging
@@ -73,6 +85,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // test flake in the sibling Manager Dashboard app's identical pattern;
     // fixed there and here together).
     const tokens = getStoredTokens();
+    // Wipe local POS data while the stored user is still readable (it is
+    // keyed by business/user). Best-effort: never blocks logout.
+    // Capped at 2s so a wedged IndexedDB can never trap someone logged in.
+    await Promise.race([
+      wipeLocalPosData({ discardUnsynced: opts?.discardUnsynced === true }).catch(() => undefined),
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
     clearTokens(); // clears tokens + cached user; business context is preserved
     setUser(null);
     if (tokens?.refresh_token) {

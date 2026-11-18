@@ -5,6 +5,9 @@ import { apiClient } from "@/lib/api";
 import type { WhatsAppStatus } from "@/types";
 import InputModeToggle from "@/components/InputModeToggle";
 import logo from "@/assets/logo.jpeg";
+import LogoutDialog from "@/components/offline/LogoutDialog";
+import { unsyncedSaleCount } from "@/lib/offline/runtime";
+import { canToggleTraining, useTrainingMode } from "@/lib/offline/training";
 
 export default function Profile() {
   const { user, logout } = useAuth();
@@ -12,6 +15,8 @@ export default function Profile() {
 
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
   const [toggling, setToggling] = useState(false);
+  const training = useTrainingMode();
+  const [unsynced, setUnsynced] = useState<number | null>(null);
 
   const loadStatus = async () => {
     try {
@@ -49,8 +54,21 @@ export default function Profile() {
     }
   };
 
+  // Offline sales that never reached the server must never be lost silently:
+  // if any exist, ask first (see LogoutDialog).
   const handleLogout = async () => {
+    const n = await unsyncedSaleCount();
+    if (n > 0) {
+      setUnsynced(n);
+      return;
+    }
     await logout();
+    navigate("/login", { replace: true });
+  };
+
+  const finishLogout = async (discardUnsynced: boolean) => {
+    setUnsynced(null);
+    await logout({ discardUnsynced });
     navigate("/login", { replace: true });
   };
 
@@ -117,6 +135,28 @@ export default function Profile() {
           </div>
         )}
 
+        {canToggleTraining(user?.role) && (
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Training mode</p>
+              <p className="text-xs text-muted-foreground">
+                Practise on the till without real sales. Nothing is sent to the server, taken off stock or counted in payments
+                or reports.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => training.setActive(!training.active)}
+              aria-pressed={training.active}
+              className={`flex h-12 w-full items-center justify-center rounded-lg text-sm font-semibold ${
+                training.active ? "bg-warning text-foreground" : "bg-secondary text-foreground border border-border"
+              }`}
+            >
+              {training.active ? "Exit training mode" : "Start training mode"}
+            </button>
+          </div>
+        )}
+
         <button
           onClick={handleLogout}
           className="flex h-14 w-full items-center justify-center rounded-lg bg-destructive text-sm font-semibold text-destructive-foreground transition-colors"
@@ -128,6 +168,13 @@ export default function Profile() {
           NextGen Intelligence © {new Date().getFullYear()}
         </p>
       </div>
+      <LogoutDialog
+        open={unsynced !== null}
+        unsyncedCount={unsynced ?? 0}
+        onCancel={() => setUnsynced(null)}
+        onLogoutKeep={() => void finishLogout(false)}
+        onLogoutDiscard={() => void finishLogout(true)}
+      />
     </div>
   );
 }

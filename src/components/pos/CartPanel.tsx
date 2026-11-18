@@ -43,6 +43,11 @@ interface Props {
   tillOpen: boolean;
   errorMessage: string | null;
   onCheckout: () => void;
+  /**
+   * When set, Checkout is disabled and this is shown as the reason (event
+   * vendor outside a paid trading day). Training mode never sets it.
+   */
+  checkoutBlockedReason?: string | null;
 }
 
 export default function CartPanel({
@@ -55,7 +60,7 @@ export default function CartPanel({
   discountRand, onDiscountRandChange,
   discountReason, onDiscountReasonChange,
   loyaltyReward, onLoyaltyRewardChange,
-  tillOpen, errorMessage, onCheckout,
+  tillOpen, errorMessage, onCheckout, checkoutBlockedReason = null,
 }: Props) {
   const subtotalCents = lines.reduce((sum, l) => sum + lineTotalCents(l), 0);
   const discountCents = Math.round((parseFloat(discountRand || "0") || 0) * 100);
@@ -86,7 +91,7 @@ export default function CartPanel({
     : 0;
 
   const tableNumberRequired = orderMode === "DINE_IN" && !!posSettings?.table_number_required;
-  const canCheckout = lines.length > 0 && tillOpen && (!tableNumberRequired || tableNumber.trim().length > 0);
+  const canCheckout = lines.length > 0 && tillOpen && !checkoutBlockedReason && (!tableNumberRequired || tableNumber.trim().length > 0);
 
   const tableNumberTouch = useTouchField({ value: tableNumber, onChange: onTableNumberChange, layout: "QWERTY", maxLength: 20 });
   const customerNameTouch = useTouchField({ value: customerName, onChange: onCustomerNameChange, layout: "QWERTY", maxLength: 100 });
@@ -311,6 +316,11 @@ export default function CartPanel({
           {!tillOpen && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
               Open the till (top-right) before taking payment.
+            </p>
+          )}
+          {checkoutBlockedReason && (
+            <p data-testid="checkout-blocked-reason" className="rounded-md bg-warning/15 px-3 py-2 text-xs text-foreground">
+              {checkoutBlockedReason}
             </p>
           )}
           {errorMessage && (

@@ -24,6 +24,14 @@ import { useBrand } from "@/lib/brand-provider";
 import { RestaurantMark } from "@/components/RestaurantIdentity";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle, AlertTriangle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
+import { cachedGet } from "@/lib/offline/snapshot-cache";
+import { useOffline } from "@/lib/offline/offline-context";
+import { useTrainingMode } from "@/lib/offline/training";
+import { useEventAccess } from "@/lib/offline/event-access";
+import type { SnapshotLine } from "@/lib/offline/types";
+import ConnectivityBadge from "@/components/offline/ConnectivityBadge";
+import { TrainingBanner, EventAccessBanner } from "@/components/offline/TillBanners";
+import LocalSaleOverlay, { LocalSlip, type LocalSaleView } from "@/components/offline/LocalSaleOverlay";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
 import { useTouchKeyboardContext, useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
@@ -80,6 +88,10 @@ export default function Pos() {
   // "WhatsApp isn't available" copy) — never gates anything security-related.
   const [receiptChoice, setReceiptChoice] = useState<"PRINT" | "WHATSAPP" | "BOTH" | "NONE" | null>(null);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  // A sale that never reached the server: either captured offline (queued) or
+  // a training sale (never sent). Shown instead of the server-order overlay.
+  const [localSale, setLocalSale] = useState<LocalSaleView | null>(null);
+  const [showLocalSlip, setShowLocalSlip] = useState(false);
 
   // ── Draft persistence + checkout submission state machine ───────────────
   // See src/lib/pos-draft.ts for the full design rationale. Short version:
@@ -95,19 +107,28 @@ export default function Pos() {
 
   const { data: categories = [], isLoading: loadingCategories } = useQuery({
     queryKey: ["pos-categories"],
-    queryFn: () => apiClient.get<MenuCategoryEntry[]>("/v1/business/menu/categories"),
+    queryFn: () => cachedGet<MenuCategoryEntry[]>(user?.business_id, "categories", "/v1/business/menu/categories"),
+    networkMode: "always", // offline must fall back to the cached menu, not pause forever
   });
 
   const { data: items = [], isLoading: loadingItems, error: itemsError } = useQuery({
     queryKey: ["pos-items"],
-    queryFn: () => apiClient.get<MenuItemEntry[]>("/v1/business/menu/items"),
+    queryFn: () => cachedGet<MenuItemEntry[]>(user?.business_id, "items", "/v1/business/menu/items"),
+    networkMode: "always",
   });
 
   const { data: till, isFetched: tillFetched } = useQuery({
     queryKey: ["till-current"],
-    queryFn: () => apiClient.get<TillSession | null>("/v1/business/pos/till/current"),
+    queryFn: () => cachedGet<TillSession | null>(user?.business_id, "till", "/v1/business/pos/till/current"),
+    networkMode: "always",
   });
-  const tillOpen = !!till;
+  // Offline resilience, training and event gating (src/lib/offline/*).
+  const offline = useOffline();
+  const training = useTrainingMode();
+  const eventAccess = useEventAccess();
+  const online = offline.online;
+  // Training runs a virtual till: no real till session is needed or touched.
+  const tillOpen = !!till || training.active;
 
   // -- Paid-but-unconsumed Pay-by-Link recovery --------------------------
   // A Pay-by-Link intent that reached PAID but was never consumed into an
@@ -151,7 +172,8 @@ export default function Pos() {
 
   const { data: posSettings = null } = useQuery({
     queryKey: ["pos-settings"],
-    queryFn: () => apiClient.get<POSSettings>("/v1/business/pos/settings"),
+    queryFn: () => cachedGet<POSSettings>(user?.business_id, "settings", "/v1/business/pos/settings"),
+    networkMode: "always",
   });
 
   // Entitlement only. A `true` here means the module is switched on for this
@@ -447,10 +469,8 @@ export default function Pos() {
     }
   }
 
-  async function handleConfirmPayment(payload: POSCheckoutPaymentPayload) {
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    const body: POSOrderCreateRequest = {
+  function buildSaleBody(payload: POSCheckoutPaymentPayload, key: string): POSOrderCreateRequest {
+    return {
       order_mode: orderMode,
       table_number: orderMode === "DINE_IN" ? (tableNumber.trim() || null) : null,
       customer_name: customerName.trim() || null,
@@ -459,7 +479,7 @@ export default function Pos() {
       discount_reason: discountCents > 0 ? (discountReason.trim() || null) : null,
       // The backend requires customer_phone whenever this is set
       // (routes_pos.py::POSOrderCreateRequest.validate_loyalty_redemption)
-      // — loyaltyReward is already cleared the instant customerPhone
+      // - loyaltyReward is already cleared the instant customerPhone
       // changes (see the effects above), but this guard is cheap insurance
       // against ever sending a redemption with no phone attached.
       loyalty_reward_id: loyaltyReward && customerPhone.trim() ? loyaltyReward.id : undefined,
@@ -471,7 +491,7 @@ export default function Pos() {
         removed_ingredient_ids: line.removedIngredientIds,
         special_instructions: line.specialInstructions,
       })),
-      // Exactly one of the two checkout payment shapes — see
+      // Exactly one of the two checkout payment shapes - see
       // PaymentDialog.tsx's "Split payment" entry point and
       // POSCheckoutPaymentPayload's docstring in src/types/index.ts.
       ...("payments" in payload
@@ -481,8 +501,123 @@ export default function Pos() {
             cash_tendered_cents: payload.cash_tendered_cents,
             payment_reference: payload.payment_reference,
           }),
-      idempotency_key: idempotencyKey,
+      idempotency_key: key,
     };
+  }
+
+  // What the cashier saw, for the queue screen / provisional slip. DISPLAY
+  // ONLY: the server re-prices every line on sync.
+  function snapshotLines(): SnapshotLine[] {
+    return cart.map((l) => ({
+      name: l.name,
+      quantity: l.quantity,
+      detail:
+        [
+          ...l.selectedOptionsDisplay.map((o) => o.optionName),
+          ...l.addOnSelections.map((a) => `+ ${a.name}`),
+          ...l.removedIngredientsDisplay.map((r) => `no ${r.name}`),
+        ].join(", ") || null,
+      line_total_cents: lineTotalCents(l),
+    }));
+  }
+
+  function cashFigures(payload: POSCheckoutPaymentPayload) {
+    const tendered = "payment_method" in payload ? (payload.cash_tendered_cents ?? null) : null;
+    return { tendered, change: tendered != null ? Math.max(0, tendered - estimatedTotalCents) : null };
+  }
+
+  function showLocalSaleAndReset(view: LocalSaleView) {
+    setPaymentOpen(false);
+    setMobileCartOpen(false);
+    closeTouchKeyboard();
+    resetForNextSale();
+    setLocalSale(view);
+  }
+
+  // Training: the sale stays in memory. No apiClient call happens here.
+  function completeTrainingSale(payload: POSCheckoutPaymentPayload) {
+    const { tendered, change } = cashFigures(payload);
+    const sale = training.addSale({
+      total_cents: estimatedTotalCents,
+      cash_tendered_cents: tendered,
+      change_due_cents: change,
+      lines: snapshotLines(),
+    });
+    showLocalSaleAndReset({ kind: "training", ...sale });
+  }
+
+  // Durable offline capture of a CASH sale under `key` (the idempotency key
+  // the server will see, identical on every retry). Returns false if it could
+  // not be captured, in which case nothing has been recorded.
+  async function captureCashSaleOffline(payload: POSCheckoutPaymentPayload, key: string): Promise<boolean> {
+    if (!eventAccess.canTrade) {
+      setErrorMessage("Trading is not open for this event vendor, so this sale cannot be saved.");
+      return false;
+    }
+    if (loyaltyReward) {
+      setErrorMessage("Loyalty rewards need internet. Remove the reward to take this sale offline.");
+      return false;
+    }
+    const { tendered, change } = cashFigures(payload);
+    const lines = snapshotLines();
+    try {
+      const entry = await offline.enqueueSale({
+        request: buildSaleBody(payload, key),
+        snapshot: { lines, total_cents: estimatedTotalCents, cash_tendered_cents: tendered, change_due_cents: change },
+      });
+      showLocalSaleAndReset({
+        kind: "offline",
+        ref: entry.local_ref,
+        created_at: entry.created_at,
+        total_cents: estimatedTotalCents,
+        cash_tendered_cents: tendered,
+        change_due_cents: change,
+        lines,
+      });
+      return true;
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Could not save the sale on this device.");
+      return false;
+    }
+  }
+
+  function handlePrintLocalSlip() {
+    setPrintFailed(false);
+    setShowLocalSlip(true);
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch {
+        setPrintFailed(true);
+      } finally {
+        setShowLocalSlip(false);
+      }
+    }, 100);
+  }
+
+  async function handleConfirmPayment(payload: POSCheckoutPaymentPayload) {
+    const isCash = "payment_method" in payload && payload.payment_method === "CASH";
+    if (training.active) {
+      completeTrainingSale(payload);
+      return;
+    }
+    if (!online) {
+      setErrorMessage(null);
+      if (!isCash) {
+        setErrorMessage("Card, payment links and other payments need internet. Take this sale as cash.");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        await captureCashSaleOffline(payload, idempotencyKey);
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    const body = buildSaleBody(payload, idempotencyKey);
     // Freeze this exact payload + key as "in flight" BEFORE sending. If the
     // response never comes back (timeout, reload, tab close) this is what
     // lets a later reload recover safely — resending the SAME payload under
@@ -495,12 +630,21 @@ export default function Pos() {
     } catch (err) {
       const apiErr = err as ApiFetchError;
       if (apiErr?.noResponse) {
+        // A CASH sale that got no HTTP response is captured to the durable
+        // offline queue under the SAME idempotency key it was just sent with:
+        // if the server did receive it, the replay returns the original order
+        // instead of a duplicate. Only if that capture is impossible do we
+        // fall back to the blocking "outcome unknown" recovery card.
+        if (isCash && offline.available && (await captureCashSaleOffline(payload, idempotencyKey))) {
+          return;
+        }
         // Outcome unknown — do NOT clear the in-flight state (it's already
         // persisted). Close the payment dialog and let the blocking recovery
         // card (rendered below, driven by submissionState) take over instead
         // of showing a normal "failed" error — we do not yet know that.
         setPaymentOpen(false);
       } else {
+        if (apiErr?.code === "EVENT_TRADING_NOT_ALLOWED") eventAccess.refresh();
         // A real HTTP response came back rejecting the order (validation,
         // till closed, etc.) — the backend's idempotency check runs before
         // any of that, so no order exists under this key. Safe to go back to
@@ -584,6 +728,13 @@ export default function Pos() {
   const cartCount = cart.reduce((sum, l) => sum + l.quantity, 0);
   const isLoading = loadingCategories || loadingItems;
 
+  const checkoutBlockedReason =
+    !training.active && !eventAccess.canTrade
+      ? eventAccess.level === "CONFIGURE"
+        ? "Set-up mode: selling opens when your paid event day starts. You can practise in Training mode."
+        : "Your event access has ended: selling is switched off. You can practise in Training mode."
+      : null;
+
   const cartPanel = (
     <CartPanel
       lines={cart}
@@ -607,6 +758,7 @@ export default function Pos() {
       tillOpen={tillOpen}
       errorMessage={null}
       onCheckout={() => setPaymentOpen(true)}
+      checkoutBlockedReason={checkoutBlockedReason}
     />
   );
 
@@ -687,10 +839,14 @@ export default function Pos() {
               )}
             </div>
           </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+          <ConnectivityBadge />
           <button
             onClick={() => setCashupOpen(true)}
+            disabled={!online || training.active}
+            title={!online ? "Needs internet" : training.active ? "Not available in training" : undefined}
             className={cn(
-              "flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold",
+              "flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold disabled:opacity-50",
               tillOpen
                 ? "bg-secondary text-foreground active:bg-muted"
                 : "bg-primary text-primary-foreground shadow-sm active:opacity-90"
@@ -706,6 +862,7 @@ export default function Pos() {
                 down. The accessible name is unchanged at every size. */}
             <span className="hidden sm:inline">{tillOpen ? "Cash-up" : "Open till"}</span>
           </button>
+          </div>
         </div>
 
         <div className="px-4 pb-3">
@@ -744,6 +901,18 @@ export default function Pos() {
           </div>
         )}
       </header>
+
+      {training.active && <TrainingBanner sales={training.sales.length} onExit={() => training.setActive(false)} />}
+      <EventAccessBanner access={eventAccess} />
+      {!online && !training.active && (
+        <div role="status" data-testid="offline-banner" className="border-b border-warning/40 bg-warning/15 px-4 py-2">
+          <p className="text-sm font-semibold text-foreground">Offline - cash sales are saved on this device</p>
+          <p className="text-xs text-muted-foreground">
+            They upload automatically when you are back online. Card, payment links, WhatsApp receipts, delivery
+            and loyalty need internet.
+          </p>
+        </div>
+      )}
 
       {/* Told inline, not silently — a cashier who reopens the till after a
           reload/relogin needs to know this cart isn't the one they left with
@@ -861,7 +1030,8 @@ export default function Pos() {
                 </p>
                 <button
                   onClick={() => setCashupOpen(true)}
-                  className="mt-3 h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground active:opacity-90 sm:w-auto"
+                  disabled={!online}
+                  className="mt-3 h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground active:opacity-90 disabled:opacity-50 sm:w-auto"
                 >
                   Open till
                 </button>
@@ -982,6 +1152,24 @@ export default function Pos() {
               )}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* A sale that is not (yet) on the server: queued offline, or training. */}
+      {localSale && (
+        <LocalSaleOverlay
+          sale={localSale}
+          printFailed={printFailed}
+          onPrint={handlePrintLocalSlip}
+          onNewSale={() => {
+            setPrintFailed(false);
+            setLocalSale(null);
+          }}
+        />
+      )}
+      {showLocalSlip && localSale && (
+        <div className="fixed top-0 left-0 z-[9999]">
+          <LocalSlip sale={localSale} />
         </div>
       )}
 
@@ -1191,6 +1379,7 @@ export default function Pos() {
         }
         customerPhone={customerPhone}
         resumePaymentIntent={resumeIntent}
+        restriction={training.active ? "training" : !online ? "offline" : null}
       />
 
       {lastOrder && (
