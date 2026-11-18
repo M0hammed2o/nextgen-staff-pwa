@@ -25,6 +25,7 @@ import { RestaurantMark } from "@/components/RestaurantIdentity";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle, AlertTriangle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { cachedGet } from "@/lib/offline/snapshot-cache";
+import { resolveSaleCustomerPhone } from "@/lib/ready-notify";
 import { useOffline } from "@/lib/offline/offline-context";
 import { useTrainingMode } from "@/lib/offline/training";
 import { useEventAccess } from "@/lib/offline/event-access";
@@ -68,6 +69,10 @@ export default function Pos() {
   const [tableNumber, setTableNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  // "Notify when ready (WhatsApp)" opt-in. Deliberately NOT persisted in the
+  // draft (consent must be given afresh for each sale) and cleared per sale.
+  const [notifyPhone, setNotifyPhone] = useState("");
+  const [notifyConsent, setNotifyConsent] = useState(false);
   const [discountRand, setDiscountRand] = useState("");
   const [discountReason, setDiscountReason] = useState("");
   // The cashier's current reward pick, if any — see LoyaltyRewardPicker.tsx
@@ -387,6 +392,8 @@ export default function Pos() {
     setTableNumber("");
     setCustomerName("");
     setCustomerPhone("");
+    setNotifyPhone("");
+    setNotifyConsent(false);
     setDiscountRand("");
     setDiscountReason("");
     setLoyaltyReward(null);
@@ -469,12 +476,21 @@ export default function Pos() {
     }
   }
 
-  function buildSaleBody(payload: POSCheckoutPaymentPayload, key: string): POSOrderCreateRequest {
+  // `allowNotify` is false for anything captured offline: WhatsApp needs
+  // internet, so an offline sale must never carry the notify number.
+  function buildSaleBody(payload: POSCheckoutPaymentPayload, key: string, allowNotify = false): POSOrderCreateRequest {
+    const salePhone = resolveSaleCustomerPhone({
+      loyaltyPhone: customerPhone,
+      notifyPhone,
+      consent: notifyConsent,
+      available: allowNotify && online && !training.active,
+      rewardApplied: !!loyaltyReward,
+    });
     return {
       order_mode: orderMode,
       table_number: orderMode === "DINE_IN" ? (tableNumber.trim() || null) : null,
       customer_name: customerName.trim() || null,
-      customer_phone: customerPhone.trim() || null,
+      customer_phone: salePhone,
       discount_cents: discountCents > 0 ? discountCents : undefined,
       discount_reason: discountCents > 0 ? (discountReason.trim() || null) : null,
       // The backend requires customer_phone whenever this is set
@@ -482,7 +498,7 @@ export default function Pos() {
       // - loyaltyReward is already cleared the instant customerPhone
       // changes (see the effects above), but this guard is cheap insurance
       // against ever sending a redemption with no phone attached.
-      loyalty_reward_id: loyaltyReward && customerPhone.trim() ? loyaltyReward.id : undefined,
+      loyalty_reward_id: loyaltyReward && salePhone ? loyaltyReward.id : undefined,
       items: cart.map((line) => ({
         menu_item_id: line.menuItemId,
         quantity: line.quantity,
@@ -617,7 +633,7 @@ export default function Pos() {
     }
     setIsSubmitting(true);
     setErrorMessage(null);
-    const body = buildSaleBody(payload, idempotencyKey);
+    const body = buildSaleBody(payload, idempotencyKey, true);
     // Freeze this exact payload + key as "in flight" BEFORE sending. If the
     // response never comes back (timeout, reload, tab close) this is what
     // lets a later reload recover safely — resending the SAME payload under
@@ -759,6 +775,14 @@ export default function Pos() {
       errorMessage={null}
       onCheckout={() => setPaymentOpen(true)}
       checkoutBlockedReason={checkoutBlockedReason}
+      readyNotify={{
+        phone: notifyPhone,
+        onPhoneChange: setNotifyPhone,
+        consent: notifyConsent,
+        onConsentChange: setNotifyConsent,
+        trainingMode: training.active,
+        online,
+      }}
     />
   );
 
@@ -1186,7 +1210,10 @@ export default function Pos() {
             <div className="flex flex-col items-center gap-2 text-center">
               <PartyPopper className="h-10 w-10 text-primary" />
               <h2 className="text-lg font-bold text-foreground">Sale complete</h2>
-              <p className="text-sm text-muted-foreground">Order {lastOrder.order_number}</p>
+              <p className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Order number</p>
+              <p data-testid="sale-order-number" className="text-5xl font-black leading-none text-foreground">
+                {lastOrder.order_number}
+              </p>
               <p className="text-2xl font-bold text-foreground">{formatCurrency(lastOrder.total_cents)}</p>
               {lastOrder.payment_method === "CASH" && lastOrder.change_due_cents != null && (
                 <p className="text-sm text-muted-foreground">

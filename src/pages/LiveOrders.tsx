@@ -5,7 +5,9 @@ import type { Order, PaginatedResponse } from "@/types";
 import OrderCard from "@/components/OrderCard";
 import EmptyState from "@/components/EmptyState";
 import DeliveryQueue, { DELIVERY_QUEUE_KEY } from "@/components/DeliveryQueue";
-import { ShoppingBag } from "lucide-react";
+import QuickOrderAction from "@/components/QuickOrderAction";
+import { Link } from "react-router-dom";
+import { ShoppingBag, Tv } from "lucide-react";
 import { subscribeToPush } from "@/lib/push-notifications";
 
 function playNewOrderAlert(): void {
@@ -130,6 +132,15 @@ export default function LiveOrders() {
               {orders.length} active order{orders.length !== 1 ? "s" : ""}
             </p>
           </div>
+          <div className="flex items-center gap-2">
+          <Link
+            to="/board"
+            aria-label="Open collection board"
+            title="Collection board (customer screen)"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-foreground transition-colors active:bg-muted"
+          >
+            <Tv className="h-[18px] w-[18px]" />
+          </Link>
           <button
             onClick={handleRefresh}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-foreground transition-colors active:bg-muted"
@@ -141,6 +152,7 @@ export default function LiveOrders() {
               <path d="M16 16h5v5" />
             </svg>
           </button>
+          </div>
         </div>
       </header>
 
@@ -156,7 +168,10 @@ export default function LiveOrders() {
         ) : (
           <div className="space-y-3">
             {orders.map((order) => (
-              <OrderCard key={order.id} order={order} />
+              <div key={order.id}>
+                <OrderCard order={order} />
+                <QuickOrderAction order={order} />
+              </div>
             ))}
           </div>
         )}

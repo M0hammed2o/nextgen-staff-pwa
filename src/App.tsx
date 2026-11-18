@@ -13,6 +13,7 @@ import { Toaster } from "@/components/ui/toaster";
 import Login from "@/pages/Login";
 import Welcome from "@/pages/Welcome";
 import LiveOrders from "@/pages/LiveOrders";
+import CollectionBoard from "@/pages/CollectionBoard";
 import Pos from "@/pages/Pos";
 import OrderDetail from "@/pages/OrderDetail";
 import CompletedOrders from "@/pages/CompletedOrders";
@@ -58,6 +59,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <LiveOrders />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/board"
+            element={
+              <ProtectedRoute>
+                <CollectionBoard />
               </ProtectedRoute>
             }
           />
