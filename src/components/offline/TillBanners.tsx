@@ -51,7 +51,8 @@ export function EventAccessBanner({ access }: { access: EventAccessState }) {
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           New sales are switched off. Sales saved on this device while offline still upload
-          {deadline ? ` until ${deadline}` : ""}. Keep this device online and tap Sync now in Offline sales.{stale}
+          {deadline ? ` until ${deadline}` : ""} and are sent to a manager to approve before they count. Keep this
+          device online and tap Sync now in Offline sales.{stale}
         </p>
       </div>
     );

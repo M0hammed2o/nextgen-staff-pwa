@@ -869,7 +869,7 @@ export default function Pos() {
   const checkoutBlockedReason =
     !training.active && !eventAccess.canTrade
       ? eventAccess.syncOnly
-        ? "The event has ended: new sales are switched off. Offline sales saved on this device still upload."
+        ? "The event has ended: new sales are switched off. Offline sales saved on this device still upload for a manager to approve."
         : eventAccess.level === "CONFIGURE"
         ? "Set-up mode: selling opens when your paid event day starts. You can practise in Training mode."
         : "Your event access has ended: selling is switched off. You can practise in Training mode."
