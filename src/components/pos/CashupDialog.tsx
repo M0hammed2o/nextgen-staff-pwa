@@ -66,6 +66,9 @@ export default function CashupDialog({ open, onClose }: Props) {
       toast({
         title: "Till opened",
         description: `Opening float ${formatCurrency(session.opening_float_cents)}. Ready to ring up.`,
+        // Short: the till card disappearing and Cash-up appearing already
+        // confirm it; a long toast just sits over the screen on a phone.
+        duration: 2500,
       });
       // The dialog is `open`-prop-controlled and stays mounted across opens
       // (see BUG-0080) — a successful open must dismiss it explicitly via

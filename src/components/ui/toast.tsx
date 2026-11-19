@@ -34,7 +34,12 @@ const ToastViewport = React.forwardRef<
       //     close still work. Even if a future layout change moves a primary
       //     control under this area, the empty parts of the viewport cannot
       //     swallow a tap.
-      "pointer-events-none fixed left-1/2 top-0 z-[100] flex max-h-screen w-full -translate-x-1/2 flex-col gap-2 p-4 md:max-w-[420px]",
+      //
+      //  3. PHONES (below md) — the viewport is full width there, so top-0
+      //     covered the whole header (connectivity badge, Cash-up) for the
+      //     toast's lifetime (Souk e2e, Pixel 7 "Till opened"). Below md it
+      //     starts under the header instead; md+ is unchanged.
+      "pointer-events-none fixed left-1/2 top-[calc(4.75rem+env(safe-area-inset-top,0px))] z-[100] flex max-h-screen w-full -translate-x-1/2 flex-col gap-2 px-4 pb-4 md:top-0 md:max-w-[420px] md:p-4",
       className,
     )}
     {...props}
@@ -43,7 +48,7 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-top-full data-[state=open]:slide-in-from-top-full",
+  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-4 pr-12 shadow-lg md:p-6 md:pr-12 transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-top-full data-[state=open]:slide-in-from-top-full",
   {
     variants: {
       variant: {
@@ -87,7 +92,8 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity group-hover:opacity-100 group-[.destructive]:text-destructive-foreground/70 hover:text-foreground group-[.destructive]:hover:text-destructive-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-[.destructive]:focus:ring-destructive-foreground/40 group-[.destructive]:focus:ring-offset-destructive",
+      // 44x44 touch target (was 24x24); the icon itself stays 16px.
+      "absolute right-0 top-0 inline-flex h-11 w-11 items-center justify-center rounded-md text-foreground/50 opacity-0 transition-opacity group-hover:opacity-100 group-[.destructive]:text-destructive-foreground/70 hover:text-foreground group-[.destructive]:hover:text-destructive-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-[.destructive]:focus:ring-destructive-foreground/40 group-[.destructive]:focus:ring-offset-destructive",
       className,
     )}
     toast-close=""
