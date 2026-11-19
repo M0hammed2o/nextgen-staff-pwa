@@ -177,6 +177,47 @@ describe("variant picker", () => {
   });
 });
 
+describe("has_variants from the menu list", () => {
+  const variantCalls = () =>
+    getMock.mock.calls.map((c) => c[0] as string).filter((p) => p.endsWith("/variants"));
+
+  function withItems(items: unknown[]) {
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((path: string) =>
+      path === "/v1/business/menu/items" ? Promise.resolve(items) : base(path),
+    );
+  }
+
+  it("has_variants:false makes no variants request (tap or warm-up) and adds straight to the cart", async () => {
+    withItems([{ ...TEE, has_variants: true }, { ...BURGER, has_variants: false }]);
+    renderPos();
+    fireEvent.click(await screen.findByText("Burger"));
+    await payCashExact();
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    const body = postMock.mock.calls[0][1] as { items: Array<Record<string, unknown>> };
+    expect(body.items[0]).toMatchObject({ menu_item_id: "item-burger", quantity: 1 });
+    expect(screen.queryByTestId("variant-grid")).toBeNull();
+    // The warm-up still asks for the variant item, never for the plain one.
+    await waitFor(() => expect(variantCalls()).toContain("/v1/business/menu/items/item-tee/variants"));
+    expect(variantCalls()).not.toContain("/v1/business/menu/items/item-burger/variants");
+  });
+
+  it("has_variants:true still requests the variants and opens the picker", async () => {
+    withItems([{ ...TEE, has_variants: true }, { ...BURGER, has_variants: false }]);
+    renderPos();
+    fireEvent.click(await screen.findByText("Tee"));
+    expect(await screen.findByTestId("variant-grid")).toHaveTextContent("M / Black");
+    expect(variantCalls()).toContain("/v1/business/menu/items/item-tee/variants");
+  });
+
+  it("an older backend without the field: every item is still asked (compatibility)", async () => {
+    renderPos(); // TEE / BURGER fixtures carry no has_variants
+    fireEvent.click(await screen.findByText("Burger"));
+    await waitFor(() => expect(variantCalls()).toContain("/v1/business/menu/items/item-burger/variants"));
+    expect(screen.queryByTestId("variant-grid")).toBeNull();
+  });
+});
+
 function installAndGet(path: string) {
   const table: Record<string, unknown> = {
     "/v1/business/menu/categories": [],

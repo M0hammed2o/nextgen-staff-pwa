@@ -95,11 +95,39 @@ export function clearVariantCache(businessId: string | null | undefined) {
   safeRemoveItem(indexKey(businessId));
 }
 
-/** Active variants of one item. With no connection: the last remembered answer (or []). */
+/** Remove one item's remembered variants (and its index entry). */
+export function forgetItemVariants(businessId: string | null | undefined, itemId: string) {
+  if (!businessId) return;
+  try {
+    if (readCachedVariants(businessId, itemId) === null) return;
+    safeRemoveItem(k(businessId, itemId));
+    const idx = readIndex(businessId);
+    if (idx.includes(itemId)) safeSetItem(indexKey(businessId), JSON.stringify(idx.filter((x) => x !== itemId)));
+  } catch {
+    /* cache is best-effort */
+  }
+}
+
+/**
+ * Whether asking the server for this item's variants can return anything.
+ * The menu list carries `has_variants` (active variants exist). Only an
+ * explicit `false` skips the request: `true`, or the field missing because the
+ * backend predates it, still asks, so an older backend behaves as before.
+ */
+export function itemMayHaveVariants(item: { has_variants?: boolean | null }): boolean {
+  return item.has_variants !== false;
+}
+
+/**
+ * Active variants of one item. With no connection: the last remembered answer (or []).
+ * An item the menu says has no active variants (`has_variants: false`) answers []
+ * without a request.
+ */
 export async function fetchItemVariants(
   businessId: string | null | undefined,
-  item: { id: string; name?: string; price_cents?: number },
+  item: { id: string; name?: string; price_cents?: number; has_variants?: boolean | null },
 ): Promise<ProductVariant[]> {
+  if (!itemMayHaveVariants(item)) return [];
   try {
     const data = await apiClient.get<ProductVariant[]>(`/v1/business/menu/items/${item.id}/variants`);
     const list = Array.isArray(data) ? data : [];
@@ -215,12 +243,19 @@ export function stockState(v: Pick<ProductVariant, "stock_on_hand">): "untracked
  */
 export async function warmVariantCache(
   businessId: string | null | undefined,
-  items: { id: string; name: string; price_cents: number }[],
+  items: { id: string; name: string; price_cents: number; has_variants?: boolean | null }[],
   opts: { concurrency?: number; maxAgeMs?: number; isCancelled?: () => boolean } = {},
 ): Promise<void> {
   if (!businessId) return;
   const { concurrency = 3, maxAgeMs = 6 * 60 * 60 * 1000, isCancelled } = opts;
+  // Items the (fresh, online) menu says have no active variants are never
+  // requested; any variants remembered for them from before are dropped, so an
+  // offline scan cannot sell a variant that has since been deactivated.
   const todo = items.filter((i) => {
+    if (!itemMayHaveVariants(i)) {
+      forgetItemVariants(businessId, i.id);
+      return false;
+    }
     const c = readCachedVariants(businessId, i.id);
     return !c || Date.now() - c.at > maxAgeMs;
   });

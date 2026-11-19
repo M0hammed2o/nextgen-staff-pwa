@@ -141,3 +141,35 @@ describe("offline lookup from the variant cache", () => {
     expect(getMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("has_variants on the menu item skips needless variant requests", () => {
+  it("has_variants:false answers [] with no request; true and absent still ask", async () => {
+    expect(await fetchItemVariants(BIZ, { ...ITEM, has_variants: false })).toEqual([]);
+    expect(getMock).not.toHaveBeenCalled();
+
+    getMock.mockResolvedValueOnce([v({})]);
+    expect(await fetchItemVariants(BIZ, { ...ITEM, has_variants: true })).toHaveLength(1);
+    getMock.mockResolvedValueOnce([v({})]);
+    expect(await fetchItemVariants(BIZ, ITEM)).toHaveLength(1); // older backend: field absent
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(getMock).toHaveBeenCalledWith("/v1/business/menu/items/item-tee/variants");
+  });
+
+  it("warm-up skips has_variants:false items and forgets their stale variants, so offline scans cannot sell them", async () => {
+    cacheVariants(BIZ, "item-old", [v({ id: "var-old", menu_item_id: "item-old", sku: "OLD-1", barcode: "999" })], {
+      item_name: "Old", base_price_cents: 100,
+    });
+    expect(lookupVariantLocal(BIZ, { sku: "OLD-1" })).not.toBeNull();
+    getMock.mockResolvedValue([v({})]);
+    await warmVariantCache(BIZ, [
+      { id: "item-tee", name: "Tee", price_cents: 19900, has_variants: true },
+      { id: "item-old", name: "Old", price_cents: 100, has_variants: false },
+      { id: "item-burger", name: "Burger", price_cents: 5000, has_variants: false },
+    ]);
+    expect(getMock.mock.calls.map((c) => c[0])).toEqual(["/v1/business/menu/items/item-tee/variants"]);
+    expect(lookupVariantLocal(BIZ, { sku: "OLD-1" })).toBeNull();
+    expect(lookupVariantLocal(BIZ, { barcode: "999" })).toBeNull();
+    // the variant item is still searchable offline
+    expect(lookupVariantLocal(BIZ, { sku: "TEE-M-BLK" })).not.toBeNull();
+  });
+});
