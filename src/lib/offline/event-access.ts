@@ -1,7 +1,8 @@
 /**
  * Event-vendor trading gate (souk). Backend: GET /v1/business/event-access.
  *
- *   { is_event_vendor, access_level: "NONE"|"CONFIGURE"|"TRADE"|null, reason, events }
+ *   { is_event_vendor, access_level: "NONE"|"CONFIGURE"|"TRADE"|null, reason, events,
+ *     ready_notify_available? }   // event vendors only (souk WhatsApp gate)
  *
  * The SERVER is the enforcement point (403 EVENT_TRADING_NOT_ALLOWED on a
  * sale); this module only decides what the till shows. Behaviour:
@@ -24,6 +25,12 @@ export interface EventAccessResponse {
   access_level: AccessLevel | null;
   reason: string | null;
   events?: unknown[];
+  /**
+   * Event vendors only: true when the backend can actually send the
+   * order-ready WhatsApp (WhatsApp enabled by the platform, the vendor's own
+   * number connected, approved template). Absent/false means "not available".
+   */
+  ready_notify_available?: boolean;
 }
 
 export interface EventAccessState {
@@ -34,6 +41,12 @@ export interface EventAccessState {
   stale: boolean;
   /** Real (non-training) trading allowed? Non-event businesses always can. */
   canTrade: boolean;
+  /**
+   * May the till offer the order-ready WhatsApp opt-in? Non-event businesses:
+   * always (unchanged). Event vendors: only when the backend says the message
+   * can really be sent.
+   */
+  readyNotifyAvailable: boolean;
 }
 
 const NOT_EVENT: EventAccessResponse = { is_event_vendor: false, access_level: null, reason: null };
@@ -82,6 +95,7 @@ export function toState(data: EventAccessResponse, stale: boolean): EventAccessS
     reason: data.reason,
     stale,
     canTrade: !data.is_event_vendor || level === "TRADE",
+    readyNotifyAvailable: !data.is_event_vendor || data.ready_notify_available === true,
   };
 }
 

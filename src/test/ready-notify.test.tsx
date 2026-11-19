@@ -176,13 +176,19 @@ describe("ready-notify opt-in at the till", () => {
     expect(screen.queryByTestId("ready-notify-offline")).toBeNull();
   });
 
-  it("is hidden for a souk event vendor, who has no WhatsApp number to send from (BUG-0210)", async () => {
+  function asEventVendor(extra: Record<string, unknown>) {
     const base = getMock.getMockImplementation()!;
     getMock.mockImplementation((path: string) =>
       path === "/v1/business/event-access"
-        ? Promise.resolve({ is_event_vendor: true, access_level: "TRADE", reason: "PAID_DAY", events: [] })
+        ? Promise.resolve({ is_event_vendor: true, access_level: "TRADE", reason: "PAID_DAY", events: [], ...extra })
         : base(path),
     );
+  }
+
+  it("is hidden for a souk event vendor whose ready message cannot be sent yet (BUG-0210)", async () => {
+    // e.g. WhatsApp not enabled by the platform, number not connected, or
+    // template not approved: the backend reports ready_notify_available=false.
+    asEventVendor({ ready_notify_available: false });
     renderPos();
     await addBurger();
     await waitFor(() => expect(screen.queryByTestId("ready-notify")).toBeNull());
@@ -190,6 +196,24 @@ describe("ready-notify opt-in at the till", () => {
     payCashExact();
     await screen.findByText("Sale complete");
     expect(postMock.mock.calls[0][1].customer_phone).toBeNull();
+  });
+
+  it("is hidden for an event vendor on an older backend that does not report availability", async () => {
+    asEventVendor({});
+    renderPos();
+    await addBurger();
+    await waitFor(() => expect(screen.queryByTestId("ready-notify")).toBeNull());
+  });
+
+  it("is offered to an event vendor once the backend reports it can send the ready message", async () => {
+    asEventVendor({ ready_notify_available: true });
+    renderPos();
+    await addBurger();
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Notify customer when ready/i }));
+    fireEvent.change(screen.getByLabelText("Customer WhatsApp number"), { target: { value: "0821234567" } });
+    payCashExact();
+    await screen.findByText("Sale complete");
+    expect(postMock.mock.calls[0][1].customer_phone).toBe("0821234567");
   });
 });
 
