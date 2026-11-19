@@ -220,6 +220,8 @@ describe("event access: sync-only grace", () => {
     const banner = await screen.findByTestId("event-sync-only-banner");
     expect(banner).toHaveTextContent("Event ended — upload your offline sales only");
     expect(banner).toHaveTextContent(/until/);
+    // review M-1: every upload in grace is held for a manager, and the till says so
+    expect(banner).toHaveTextContent(/sent to a manager to approve/);
     const panel = await screen.findByTestId("sync-only-panel");
     expect(panel).toHaveTextContent("1 offline sale is waiting to upload.");
     expect(panel).toHaveTextContent("1 needs a manager.");
