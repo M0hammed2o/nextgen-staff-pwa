@@ -77,6 +77,11 @@ export default function Pos() {
   // no tap is ever lost (Souk e2e: a fast second tap used to drop the first).
   const tapDialogQueue = useRef<Array<{ kind: "variants"; item: MenuItemEntry; list: ProductVariant[] } | { kind: "options"; item: MenuItemEntry }>>([]);
   const [tapDialogTick, setTapDialogTick] = useState(0);
+  // Tile taps whose variants lookup has not answered yet. Checkout waits for
+  // them: a tap that landed after the payment dialog opened used to change
+  // the total under it, leaving "Exact" tendered at the old amount (Souk e2e:
+  // R25.00 tendered on a R50.00 total).
+  const [pendingTaps, setPendingTaps] = useState(0);
   const [pendingVariant, setPendingVariant] = useState<ProductVariant | null>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanMessage, setScanMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
@@ -395,10 +400,13 @@ export default function Pos() {
   // may add lines out of tap order; each tap still adds exactly one.
   async function loadVariantsFor(item: MenuItemEntry) {
     let list: ProductVariant[] = [];
+    setPendingTaps((n) => n + 1);
     try {
       list = await fetchItemVariants(user?.business_id, item);
     } catch {
       list = [];
+    } finally {
+      setPendingTaps((n) => Math.max(0, n - 1));
     }
     if (list.length === 0) {
       if (itemHasChoices(item)) requestTapDialog({ kind: "options", item });
@@ -937,7 +945,11 @@ export default function Pos() {
       onLoyaltyRewardChange={setLoyaltyReward}
       tillOpen={tillOpen}
       errorMessage={null}
-      onCheckout={() => setPaymentOpen(true)}
+      onCheckout={() => {
+        if (pendingTaps > 0) return; // an item is still being added
+        setPaymentOpen(true);
+      }}
+      checkoutPending={pendingTaps > 0}
       checkoutBlockedReason={checkoutBlockedReason}
       // Souk event vendors (KNOWN_BUGS BUG-0210): the opt-in is offered only
       // when the backend reports the ready message can really be sent (the

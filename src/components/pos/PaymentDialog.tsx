@@ -206,6 +206,16 @@ export default function PaymentDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // The amount due changed while the dialog is open (defence in depth; Pos
+  // also holds Checkout while a tapped item is still being added): a cash
+  // figure entered or "Exact"-filled for the old total must not stay put, so
+  // the cashier re-enters it against the new total.
+  const lastTotalRef = useRef(totalCents);
+  useEffect(() => {
+    if (open && lastTotalRef.current !== totalCents) setCashInput("");
+    lastTotalRef.current = totalCents;
+  }, [open, totalCents]);
+
   // A blocking notice / resume error belongs to the screen it was raised on.
   useEffect(() => {
     setBlockingNotice(null);
