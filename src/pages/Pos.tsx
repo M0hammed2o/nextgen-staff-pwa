@@ -610,7 +610,7 @@ export default function Pos() {
       loyaltyPhone: customerPhone,
       notifyPhone,
       consent: notifyConsent,
-      available: allowNotify && online && !training.active,
+      available: allowNotify && online && !training.active && eventAccess.readyNotifyAvailable,
       rewardApplied: !!loyaltyReward,
     });
     return {
@@ -897,11 +897,13 @@ export default function Pos() {
       errorMessage={null}
       onCheckout={() => setPaymentOpen(true)}
       checkoutBlockedReason={checkoutBlockedReason}
-      // Souk event vendors have no WhatsApp number of their own (by design,
-      // KNOWN_BUGS BUG-0210), so the ready message could never be sent: the
-      // opt-in is hidden rather than promising the customer a message. The
-      // /board collection screen is their "order ready" path.
-      readyNotify={eventAccess.isEventVendor ? undefined : {
+      // Souk event vendors (KNOWN_BUGS BUG-0210): the opt-in is offered only
+      // when the backend reports the ready message can really be sent (the
+      // platform enabled WhatsApp, the vendor's own number is connected and
+      // its order-ready template is approved). Otherwise it stays hidden
+      // rather than promising a message, and the /board collection screen is
+      // the "order ready" path. Restaurants: unchanged.
+      readyNotify={!eventAccess.readyNotifyAvailable ? undefined : {
         phone: notifyPhone,
         onPhoneChange: setNotifyPhone,
         consent: notifyConsent,
