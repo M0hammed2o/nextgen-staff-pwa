@@ -866,10 +866,15 @@ export default function Pos() {
 
   const checkoutBlockedReason =
     !training.active && !eventAccess.canTrade
-      ? eventAccess.level === "CONFIGURE"
+      ? eventAccess.syncOnly
+        ? "The event has ended: new sales are switched off. Offline sales saved on this device still upload."
+        : eventAccess.level === "CONFIGURE"
         ? "Set-up mode: selling opens when your paid event day starts. You can practise in Training mode."
         : "Your event access has ended: selling is switched off. You can practise in Training mode."
       : null;
+  // BUG-0208: after the event only the upload of queued offline sales is allowed,
+  // so the menu (which the server no longer serves) is replaced by that state.
+  const syncOnlyMode = eventAccess.syncOnly && !training.active;
 
   const cartPanel = (
     <CartPanel
@@ -991,8 +996,8 @@ export default function Pos() {
           <ConnectivityBadge />
           <button
             onClick={() => setCashupOpen(true)}
-            disabled={!online || training.active}
-            title={!online ? "Needs internet" : training.active ? "Not available in training" : undefined}
+            disabled={!online || training.active || (syncOnlyMode && !tillOpen)}
+            title={!online ? "Needs internet" : training.active ? "Not available in training" : syncOnlyMode && !tillOpen ? "The event has ended" : undefined}
             className={cn(
               "flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold disabled:opacity-50",
               tillOpen
@@ -1182,7 +1187,7 @@ export default function Pos() {
           be rung up, and the header button alone was too easy to miss on a
           busy screen. This states the blocker in plain words and carries the
           action that clears it, in the place staff are already looking. */}
-      {!tillOpen && (
+      {!tillOpen && !syncOnlyMode && (
         <div className="px-4 pt-4">
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
             <div className="flex items-start gap-3">
@@ -1209,7 +1214,25 @@ export default function Pos() {
       <div className={cn(isLandscapePOS && "flex flex-1 overflow-hidden")}>
         {/* Left: product grid */}
         <div className={cn("px-4 py-4", isLandscapePOS && "flex-1 overflow-y-auto")}>
-          {isLoading ? (
+          {syncOnlyMode ? (
+            <div data-testid="sync-only-panel" className="mx-auto flex min-h-[40vh] max-w-md flex-col items-center justify-center gap-3 text-center">
+              <p className="text-base font-semibold text-foreground">Event ended — upload your offline sales only</p>
+              <p className="text-sm text-muted-foreground">
+                {offline.counts.pending + offline.counts.syncing > 0
+                  ? `${offline.counts.pending + offline.counts.syncing} offline sale${offline.counts.pending + offline.counts.syncing === 1 ? " is" : "s are"} waiting to upload.`
+                  : "Nothing is waiting to upload on this device."}
+                {offline.counts.attention > 0 ? ` ${offline.counts.attention} need${offline.counts.attention === 1 ? "s" : ""} a manager.` : ""}
+                {offline.counts.review > 0 ? ` ${offline.counts.review} sent to a manager for review.` : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() => void offline.syncNow().catch(() => undefined)}
+                className="h-11 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground"
+              >
+                Sync now
+              </button>
+            </div>
+          ) : isLoading ? (
             <div className="flex min-h-[40vh] items-center justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>

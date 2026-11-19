@@ -1,7 +1,12 @@
 /**
  * Event-vendor trading gate (souk). Backend: GET /v1/business/event-access.
  *
- *   { is_event_vendor, access_level: "NONE"|"CONFIGURE"|"TRADE"|null, reason, events }
+ *   { is_event_vendor, access_level: "NONE"|"CONFIGURE"|"TRADE"|null, reason, events,
+ *     sync_only?, sync_only_until? }
+ *
+ * sync_only (BUG-0208): the event is over and the vendor is inside the server's
+ * post-event sync grace. New sales stay off (access_level is NONE); the queue
+ * still uploads offline sales until sync_only_until. Absent on older backends.
  *
  * The SERVER is the enforcement point (403 EVENT_TRADING_NOT_ALLOWED on a
  * sale); this module only decides what the till shows. Behaviour:
@@ -24,6 +29,8 @@ export interface EventAccessResponse {
   access_level: AccessLevel | null;
   reason: string | null;
   events?: unknown[];
+  sync_only?: boolean;
+  sync_only_until?: string | null;
 }
 
 export interface EventAccessState {
@@ -34,6 +41,10 @@ export interface EventAccessState {
   stale: boolean;
   /** Real (non-training) trading allowed? Non-event businesses always can. */
   canTrade: boolean;
+  /** Event over: only queued offline sales may still upload (never new sales). */
+  syncOnly: boolean;
+  /** ISO instant the upload-only window ends, when syncOnly. */
+  syncOnlyUntil: string | null;
 }
 
 const NOT_EVENT: EventAccessResponse = { is_event_vendor: false, access_level: null, reason: null };
@@ -82,6 +93,8 @@ export function toState(data: EventAccessResponse, stale: boolean): EventAccessS
     reason: data.reason,
     stale,
     canTrade: !data.is_event_vendor || level === "TRADE",
+    syncOnly: data.is_event_vendor && data.sync_only === true,
+    syncOnlyUntil: data.is_event_vendor && data.sync_only === true ? data.sync_only_until ?? null : null,
   };
 }
 
