@@ -25,7 +25,7 @@ import { useBrand } from "@/lib/brand-provider";
 import { RestaurantMark } from "@/components/RestaurantIdentity";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle, AlertTriangle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
-import { cachedGet } from "@/lib/offline/snapshot-cache";
+import { cachedGet, tillCurrentQuery } from "@/lib/offline/snapshot-cache";
 import { resolveSaleCustomerPhone } from "@/lib/ready-notify";
 import { useOffline } from "@/lib/offline/offline-context";
 import { useTrainingMode } from "@/lib/offline/training";
@@ -146,16 +146,26 @@ export default function Pos() {
     networkMode: "always",
   });
 
-  const { data: till, isFetched: tillFetched } = useQuery({
-    queryKey: ["till-current"],
-    queryFn: () => cachedGet<TillSession | null>(user?.business_id, "till", "/v1/business/pos/till/current"),
-    networkMode: "always",
-  });
+  const {
+    data: till, isFetched: tillFetched, isError: tillUnknown, isFetching: tillChecking, refetch: refetchTill,
+  } = useQuery(tillCurrentQuery<TillSession>(user?.business_id));
   // Offline resilience, training and event gating (src/lib/offline/*).
   const offline = useOffline();
   const training = useTrainingMode();
   const eventAccess = useEventAccess();
   const online = offline.online;
+  // Back online: re-ask the server for everything the till decides on. A
+  // till/menu answer captured while offline (or a failed one) must not stick
+  // until a manual reload (Souk e2e 6a: "till closed" after reconnect).
+  const wasOnlineRef = useRef(online);
+  useEffect(() => {
+    if (online && !wasOnlineRef.current) {
+      for (const key of ["till-current", "pos-items", "pos-categories", "pos-settings", "event-access"]) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    }
+    wasOnlineRef.current = online;
+  }, [online, queryClient]);
   // Training runs a virtual till: no real till session is needed or touched.
   const tillOpen = !!till || training.active;
 
@@ -1218,7 +1228,33 @@ export default function Pos() {
           be rung up, and the header button alone was too easy to miss on a
           busy screen. This states the blocker in plain words and carries the
           action that clears it, in the place staff are already looking. */}
-      {!tillOpen && !syncOnlyMode && (
+      {/* No answer about the till at all (offline with no device copy, or a
+          server error): that is "unknown", not "closed". Selling stays locked,
+          and the query keeps re-checking on its own (tillCurrentQuery). */}
+      {!tillOpen && !syncOnlyMode && tillUnknown && (
+        <div className="px-4 pt-4" data-testid="till-status-unknown">
+          <div className="rounded-xl border border-warning/40 bg-warning/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">Can't check the till right now</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  The till status could not be loaded{online ? "" : " while offline"}. It is checked again
+                  automatically; selling stays locked until then.
+                </p>
+                <button
+                  onClick={() => void refetchTill()}
+                  disabled={tillChecking}
+                  className="mt-3 h-11 w-full rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground active:opacity-90 disabled:opacity-50 sm:w-auto"
+                >
+                  {tillChecking ? "Checking…" : "Check again"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {!tillOpen && !syncOnlyMode && !tillUnknown && (
         <div className="px-4 pt-4">
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
             <div className="flex items-start gap-3">

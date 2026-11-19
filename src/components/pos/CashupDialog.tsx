@@ -4,6 +4,7 @@ import { apiClient } from "@/lib/api";
 import type { ApiFetchError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isPosNotEnabledError } from "@/lib/pos-settings";
+import { tillCurrentQuery } from "@/lib/offline/snapshot-cache";
 import type { TillSession, TillOpenRequest, TillCloseRequest } from "@/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -50,9 +51,9 @@ export default function CashupDialog({ open, onClose }: Props) {
   // TILL_ALREADY_OPEN) is the real backstop, not the first line of defense.
   const openInFlightRef = useRef(false);
 
+  // Same query definition as Pos (see tillCurrentQuery for why it must be).
   const { data: current, isLoading } = useQuery({
-    queryKey: ["till-current"],
-    queryFn: () => apiClient.get<TillSession | null>("/v1/business/pos/till/current"),
+    ...tillCurrentQuery<TillSession>(user?.business_id),
     enabled: open,
   });
 
