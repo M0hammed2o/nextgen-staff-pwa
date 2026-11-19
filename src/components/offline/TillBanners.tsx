@@ -1,4 +1,8 @@
-import { GraduationCap, CalendarClock, Ban } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { GraduationCap, CalendarClock, Ban, Clock } from "lucide-react";
+import { useOffline } from "@/lib/offline/offline-context";
+import { useEventAccess } from "@/lib/offline/event-access";
+import { clockSkewStore, isClockSkewed, staleQueueState, thresholdsFor, CLOCK_SKEW_WARN_MS } from "@/lib/offline/capture";
 import type { EventAccessState } from "@/lib/offline/event-access";
 
 export function TrainingBanner({ onExit, sales }: { onExit: () => void; sales: number }) {
@@ -54,5 +58,54 @@ export function EventAccessBanner({ access }: { access: EventAccessState }) {
         {access.reason ?? "There is no paid event day covering today."} Contact your event organiser to renew.{stale}
       </p>
     </div>
+  );
+}
+
+/**
+ * Warns when offline sales have been waiting close to the server's 72 hour limit,
+ * and when the device clock disagrees with the server's by more than 5 minutes.
+ */
+export function OfflineWarnings() {
+  const { entries } = useOffline();
+  const { isEventVendor } = useEventAccess();
+  const skew = useSyncExternalStore(clockSkewStore.subscribe, clockSkewStore.get, clockSkewStore.get);
+  // Re-evaluate every minute so the warning appears without any interaction.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const stale = staleQueueState(entries, Date.now(), thresholdsFor(isEventVendor));
+  const skewed = isClockSkewed(skew);
+  if (stale.level === "none" && !skewed) return null;
+  return (
+    <>
+      {stale.level !== "none" && (
+        <div role="alert" data-testid="stale-queue-warning" className="border-b border-destructive/40 bg-destructive/10 px-4 py-2.5">
+          <p className="flex items-center gap-2 text-sm font-semibold text-destructive">
+            <Clock className="h-4 w-4 flex-shrink-0" />
+            {stale.level === "expired"
+              ? `Some offline sales are over ${stale.maxAgeHours} hours old`
+              : `Reconnect soon: an offline sale is getting old (about ${stale.hoursLeft}h left)`}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {stale.level === "expired"
+              ? `The server refuses sales older than ${stale.maxAgeHours} hours. Reconnect and tap Sync now; any refused sale will show under Needs attention for a manager to enter by hand.`
+              : `Connect this device to the internet so the sale uploads. Sales older than ${stale.maxAgeHours} hours are refused.`}
+          </p>
+        </div>
+      )}
+      {skewed && (
+        <div role="alert" data-testid="clock-skew-warning" className="border-b border-warning/40 bg-warning/15 px-4 py-2.5">
+          <p className="text-sm font-semibold text-foreground">
+            This device's clock is {Math.round(Math.abs(skew as number) / 60000)} minutes {(skew as number) > 0 ? "ahead of" : "behind"} the server
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Sales taken offline are stamped with this clock. Correct the date and time in the device settings
+            (more than {CLOCK_SKEW_WARN_MS / 60000} minutes off can get offline sales refused).
+          </p>
+        </div>
+      )}
+    </>
   );
 }

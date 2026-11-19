@@ -32,7 +32,7 @@ import { useTrainingMode } from "@/lib/offline/training";
 import { useEventAccess } from "@/lib/offline/event-access";
 import type { SnapshotLine } from "@/lib/offline/types";
 import ConnectivityBadge from "@/components/offline/ConnectivityBadge";
-import { TrainingBanner, EventAccessBanner } from "@/components/offline/TillBanners";
+import { TrainingBanner, EventAccessBanner, OfflineWarnings } from "@/components/offline/TillBanners";
 import LocalSaleOverlay, { LocalSlip, type LocalSaleView } from "@/components/offline/LocalSaleOverlay";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
@@ -1050,6 +1050,7 @@ export default function Pos() {
 
       {training.active && <TrainingBanner sales={training.sales.length} onExit={() => training.setActive(false)} />}
       <EventAccessBanner access={eventAccess} />
+      <OfflineWarnings />
       {exchange && (
         <div
           role="status"
