@@ -361,9 +361,11 @@ export default function Pos() {
     });
   }
 
-  // Any item may have variants and the menu list does not say which, so a tap
-  // asks for them (cached after the first time, so instant offline and on
-  // repeat taps). An item with none behaves exactly as before.
+  // The menu list says which items have active variants (`has_variants`); a
+  // tap on one of those asks for them (cached after the first time, so instant
+  // offline and on repeat taps). An item with `has_variants: false` makes no
+  // request (fetchItemVariants answers [] locally) and behaves exactly as
+  // before; an older backend that omits the field is still asked.
   // The picker dialog only opens once variants are known to exist, so a plain
   // menu item never flashes it. If the lookup fails (older backend, 5xx) the
   // item is treated as a plain item: the server still refuses a variant item

@@ -256,6 +256,11 @@ export interface MenuItemEntry {
   sort_order: number;
   image_url: string | null;
   requires_preparation: boolean;
+  /**
+   * True when the item has at least one ACTIVE product variant. Absent from an
+   * older backend: treat "absent" as "maybe" and ask (see itemMayHaveVariants).
+   */
+  has_variants?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
