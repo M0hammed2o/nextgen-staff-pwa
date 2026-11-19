@@ -25,6 +25,11 @@ function randomId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** The server holds this sale (an order, or a late upload awaiting manager review). */
+export function isOnServer(e: Pick<QueueEntry, "status">): boolean {
+  return e.status === "synced" || e.status === "review";
+}
+
 export interface EnqueueInput {
   businessId: string;
   staffId: string;
@@ -196,6 +201,26 @@ export class OfflineQueue {
     );
   }
 
+  /**
+   * 202 OFFLINE_CAPTURE_PENDING_REVIEW: the server holds the sale for a manager.
+   * Final here: the payload is dropped (the server has it), it is not retried
+   * and it no longer counts as unsynced.
+   */
+  markReview(id: string, reviewId: string) {
+    return this.exclusive(() =>
+      this.update(id, (e) => ({
+        ...e,
+        status: "review",
+        payload: null,
+        last_error: null,
+        last_error_code: null,
+        next_attempt_at: null,
+        review_id: reviewId,
+        synced_at: this.iso(),
+      })),
+    );
+  }
+
   markRetry(id: string, error: string, nextAttemptAt: number) {
     return this.exclusive(() =>
       this.update(id, (e) => ({
@@ -286,13 +311,13 @@ export class OfflineQueue {
     return (await this.store.getMeta<AuditLine[]>(AUDIT_META)) ?? [];
   }
 
-  /** Remove synced entries older than the retention window. Never touches unsynced ones. */
+  /** Remove synced (or sent-for-review) entries older than the retention window. Never touches unsynced ones. */
   purgeSynced(olderThanMs: number = SYNCED_RETENTION_MS) {
     return this.exclusive(async () => {
       const cutoff = this.now() - olderThanMs;
       let n = 0;
       for (const e of await this.store.getAllEntries()) {
-        if (e.status === "synced" && e.synced_at && Date.parse(e.synced_at) <= cutoff) {
+        if (isOnServer(e) && e.synced_at && Date.parse(e.synced_at) <= cutoff) {
           await this.store.deleteEntry(e.id);
           n++;
         }
@@ -303,7 +328,7 @@ export class OfflineQueue {
   }
 
   async unsyncedCount(): Promise<number> {
-    return (await this.store.getAllEntries()).filter((e) => e.status !== "synced").length;
+    return (await this.store.getAllEntries()).filter((e) => !isOnServer(e)).length;
   }
 
   /**
@@ -317,10 +342,10 @@ export class OfflineQueue {
   wipe(opts: { discardUnsynced: boolean }) {
     return this.exclusive(async () => {
       const all = await this.store.getAllEntries();
-      const keep = opts.discardUnsynced ? [] : all.filter((e) => e.status !== "synced");
+      const keep = opts.discardUnsynced ? [] : all.filter((e) => !isOnServer(e));
       if (opts.discardUnsynced) {
         // Deliberately dropped sales leave a (PII-free) audit line, same as a manual discard.
-        const dropped = all.filter((e) => e.status !== "synced");
+        const dropped = all.filter((e) => !isOnServer(e));
         if (dropped.length) {
           const audit = (await this.store.getMeta<AuditLine[]>(AUDIT_META)) ?? [];
           for (const e of dropped) {

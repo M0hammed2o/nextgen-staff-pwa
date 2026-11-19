@@ -10,6 +10,8 @@ export interface QueueCounts {
   syncing: number;
   attention: number;
   synced: number;
+  /** Sent to a manager for review (on the server, awaiting a decision). */
+  review: number;
 }
 
 export interface OfflineContextValue {
@@ -26,7 +28,7 @@ export interface OfflineContextValue {
   discard: (id: string, confirmed: boolean) => Promise<void>;
 }
 
-const EMPTY_COUNTS: QueueCounts = { pending: 0, syncing: 0, attention: 0, synced: 0 };
+const EMPTY_COUNTS: QueueCounts = { pending: 0, syncing: 0, attention: 0, synced: 0, review: 0 };
 
 const INERT: OfflineContextValue = {
   available: false,
@@ -51,6 +53,7 @@ export function countEntries(entries: QueueEntry[]): QueueCounts {
     else if (e.status === "syncing") c.syncing++;
     else if (e.status === "conflict" || e.status === "failed") c.attention++;
     else if (e.status === "synced") c.synced++;
+    else if (e.status === "review") c.review++;
   }
   return c;
 }

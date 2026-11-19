@@ -1,6 +1,12 @@
 import type { POSOrderCreateRequest } from "@/types";
 
-export type EntryStatus = "pending" | "syncing" | "synced" | "conflict" | "failed";
+/**
+ * "review": the server refused to auto-accept the sale (older than its automatic
+ * upload limit) and queued it for a manager to approve or reject (202
+ * OFFLINE_CAPTURE_PENDING_REVIEW). Final on this device: never retried, never
+ * counted as unsynced (the server holds it), payload dropped like a synced sale.
+ */
+export type EntryStatus = "pending" | "syncing" | "synced" | "review" | "conflict" | "failed";
 
 /** AES-GCM ciphertext + IV. Raw bytes, never a string of the plaintext. */
 export interface EncryptedBlob {
@@ -56,6 +62,8 @@ export interface QueueEntry {
   server_order_id?: string;
   server_order_number?: string;
   synced_at?: string;
+  /** Set with status "review": the server's offline review id. */
+  review_id?: string;
 }
 
 export interface AuditLine {

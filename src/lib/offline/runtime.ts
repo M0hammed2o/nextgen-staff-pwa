@@ -9,6 +9,7 @@ import { loadPosDraft, clearPosDraft } from "@/lib/pos-draft";
 import { safeRemoveItem } from "@/lib/safe-storage";
 import { OfflineQueue } from "./queue";
 import { SyncEngine } from "./sync-engine";
+import type { SyncedOrder } from "./sync-engine";
 import { IndexedDbStore } from "./store";
 import { clearSnapshots } from "./snapshot-cache";
 import { trainingStore } from "./training";
@@ -44,8 +45,16 @@ export function getEngine(): SyncEngine {
         // identical on every retry of this sale. Any offline_captured_at /
         // captured_by_user_id / offline_client_total_cents were stamped at sale
         // time and ride along unchanged; an older entry without them is sent as is.
-        const body = { ...payload.request, idempotency_key: entry.id };
-        return apiFetch<Order>(SALE_ENDPOINT, {
+        // BUG-0208: opt in to the server's late-upload review queue, so a sale
+        // older than the automatic limit is sent to a manager (202) instead of
+        // being refused. Only valid on an offline capture (the server 422s it
+        // otherwise), so an old entry without a capture time is sent as before.
+        const body = {
+          ...payload.request,
+          idempotency_key: entry.id,
+          ...(payload.request.offline_captured_at ? { offline_review_if_too_old: true } : {}),
+        };
+        return apiFetch<Order & SyncedOrder>(SALE_ENDPOINT, {
           method: "POST",
           body: JSON.stringify(body),
           timeoutMs: 30_000,

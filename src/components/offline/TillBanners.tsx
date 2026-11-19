@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { GraduationCap, CalendarClock, Ban, Clock } from "lucide-react";
+import { GraduationCap, CalendarClock, Ban, Clock, UploadCloud } from "lucide-react";
 import { useOffline } from "@/lib/offline/offline-context";
 import { useEventAccess } from "@/lib/offline/event-access";
 import { clockSkewStore, isClockSkewed, staleQueueState, thresholdsFor, CLOCK_SKEW_WARN_MS } from "@/lib/offline/capture";
@@ -31,9 +31,31 @@ export function TrainingBanner({ onExit, sales }: { onExit: () => void; sales: n
   );
 }
 
+export function formatDeadline(iso: string | null): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return new Date(t).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 export function EventAccessBanner({ access }: { access: EventAccessState }) {
   if (!access.isEventVendor || access.level === "TRADE") return null;
   const stale = access.stale ? " (last known status; reconnect to refresh)" : "";
+  if (access.syncOnly) {
+    const deadline = formatDeadline(access.syncOnlyUntil);
+    return (
+      <div role="alert" data-testid="event-sync-only-banner" className="border-b border-primary/40 bg-primary/10 px-4 py-2.5">
+        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <UploadCloud className="h-4 w-4 flex-shrink-0" />
+          Event ended — upload your offline sales only
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          New sales are switched off. Sales saved on this device while offline still upload
+          {deadline ? ` until ${deadline}` : ""}. Keep this device online and tap Sync now in Offline sales.{stale}
+        </p>
+      </div>
+    );
+  }
   if (access.level === "CONFIGURE") {
     return (
       <div role="status" data-testid="event-access-banner" className="border-b border-primary/30 bg-primary/10 px-4 py-2.5">

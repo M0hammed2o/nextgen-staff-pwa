@@ -2,7 +2,11 @@
  * Event-vendor trading gate (souk). Backend: GET /v1/business/event-access.
  *
  *   { is_event_vendor, access_level: "NONE"|"CONFIGURE"|"TRADE"|null, reason, events,
- *     ready_notify_available? }   // event vendors only (souk WhatsApp gate)
+ *     ready_notify_available?, sync_only?, sync_only_until? }   // event vendors only (souk WhatsApp gate)
+ *
+ * sync_only (BUG-0208): the event is over and the vendor is inside the server's
+ * post-event sync grace. New sales stay off (access_level is NONE); the queue
+ * still uploads offline sales until sync_only_until. Absent on older backends.
  *
  * The SERVER is the enforcement point (403 EVENT_TRADING_NOT_ALLOWED on a
  * sale); this module only decides what the till shows. Behaviour:
@@ -31,6 +35,8 @@ export interface EventAccessResponse {
    * number connected, approved template). Absent/false means "not available".
    */
   ready_notify_available?: boolean;
+  sync_only?: boolean;
+  sync_only_until?: string | null;
 }
 
 export interface EventAccessState {
@@ -47,6 +53,10 @@ export interface EventAccessState {
    * can really be sent.
    */
   readyNotifyAvailable: boolean;
+  /** Event over: only queued offline sales may still upload (never new sales). */
+  syncOnly: boolean;
+  /** ISO instant the upload-only window ends, when syncOnly. */
+  syncOnlyUntil: string | null;
 }
 
 const NOT_EVENT: EventAccessResponse = { is_event_vendor: false, access_level: null, reason: null };
@@ -96,6 +106,8 @@ export function toState(data: EventAccessResponse, stale: boolean): EventAccessS
     stale,
     canTrade: !data.is_event_vendor || level === "TRADE",
     readyNotifyAvailable: !data.is_event_vendor || data.ready_notify_available === true,
+    syncOnly: data.is_event_vendor && data.sync_only === true,
+    syncOnlyUntil: data.is_event_vendor && data.sync_only === true ? data.sync_only_until ?? null : null,
   };
 }
 
