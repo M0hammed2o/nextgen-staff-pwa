@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { apiClient } from "@/lib/api";
 import type { ApiFetchError } from "@/lib/api";
 import type {
@@ -37,6 +38,12 @@ import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } fr
 import { useTouchField } from "@/hooks/useTouchField";
 import { useTouchKeyboardContext, useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 import { useIsLandscapePOS } from "@/hooks/useIsLandscapePOS";
+import VariantPicker from "@/components/pos/VariantPicker";
+import ScanField, { useWedgeScanner } from "@/components/pos/ScanField";
+import { fetchItemVariants, resolveScan, warmVariantCache, type ProductVariant } from "@/lib/variants";
+import { addLineToCart, buildVariantLine, cartLineToSaleItem } from "@/lib/cart-variant";
+import { parseExchangeParams } from "@/lib/returns";
+import { friendlyPosError } from "@/lib/pos-errors";
 
 function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -61,6 +68,19 @@ export default function Pos() {
   const [activeCategory, setActiveCategory] = useState<string | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [optionsItem, setOptionsItem] = useState<MenuItemEntry | null>(null);
+  // Variant flow: the item whose picker is open, its variants (null until
+  // loaded), and a variant already chosen that still needs the options dialog.
+  const [variantItem, setVariantItem] = useState<MenuItemEntry | null>(null);
+  const [variantList, setVariantList] = useState<ProductVariant[] | null>(null);
+  const variantTapToken = useRef(0);
+  const [pendingVariant, setPendingVariant] = useState<ProductVariant | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanMessage, setScanMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
+  // Exchange: the refunded order this sale replaces (from /pos?exchange_of=..).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [exchange, setExchange] = useState<{ id: string; number: string } | null>(() =>
+    parseExchangeParams(searchParams),
+  );
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [cashupOpen, setCashupOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -341,11 +361,112 @@ export default function Pos() {
     });
   }
 
+  // Any item may have variants and the menu list does not say which, so a tap
+  // asks for them (cached after the first time, so instant offline and on
+  // repeat taps). An item with none behaves exactly as before.
+  // The picker dialog only opens once variants are known to exist, so a plain
+  // menu item never flashes it. If the lookup fails (older backend, 5xx) the
+  // item is treated as a plain item: the server still refuses a variant item
+  // sold without one (VARIANT_REQUIRED, mapped to a clear message), so a
+  // failed lookup can never sell the wrong thing, and it never blocks a
+  // restaurant sale.
+  async function loadVariantsFor(item: MenuItemEntry) {
+    const token = ++variantTapToken.current;
+    let list: ProductVariant[] = [];
+    try {
+      list = await fetchItemVariants(user?.business_id, item);
+    } catch {
+      list = [];
+    }
+    if (token !== variantTapToken.current) return; // a newer tap superseded this one
+    if (list.length === 0) {
+      if (itemHasChoices(item)) setOptionsItem(item);
+      else addSimpleItem(item);
+      return;
+    }
+    setVariantList(list);
+    setVariantItem(item);
+  }
+
   function handleTileTap(item: MenuItemEntry) {
+    void loadVariantsFor(item);
+  }
+
+  function addVariantToCart(item: MenuItemEntry, variant: ProductVariant) {
     if (itemHasChoices(item)) {
+      setPendingVariant(variant);
       setOptionsItem(item);
-    } else {
-      addSimpleItem(item);
+      return;
+    }
+    setCart((prev) => addLineToCart(prev, buildVariantLine(item, variant)));
+    if (!isLandscapePOS) setMobileCartOpen(true);
+  }
+
+  function handlePickVariant(variant: ProductVariant) {
+    const item = variantItem;
+    if (!item) return;
+    setVariantItem(null);
+    setVariantList(null);
+    addVariantToCart(item, variant);
+  }
+
+  async function handleScan(code: string) {
+    if (!tillOpen) {
+      setScanMessage({ kind: "error", text: "Open the till before scanning." });
+      return;
+    }
+    setScanBusy(true);
+    setScanMessage(null);
+    try {
+      const res = await resolveScan(user?.business_id, code, online);
+      if (res.kind === "not_found") {
+        setScanMessage({
+          kind: "error",
+          text: `"${code}" was not found${online ? "" : " on this device (offline: only products already loaded can be scanned)"}.`,
+        });
+        return;
+      }
+      if (res.kind === "error") {
+        setScanMessage({ kind: "error", text: res.message });
+        return;
+      }
+      const { result } = res;
+      const item =
+        items.find((i) => i.id === result.menu_item_id) ??
+        ({
+          id: result.menu_item_id, category_id: null, name: result.menu_item_name, description: null,
+          price_cents: result.base_price_cents, currency: "ZAR", options_json: null, add_ons: [], is_active: true,
+          sort_order: 0, image_url: null, requires_preparation: false,
+        } as MenuItemEntry);
+      setScanMessage({ kind: "info", text: `Added ${item.name} (${result.variant.label})` });
+      addVariantToCart(item, result.variant);
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  // Scan without tapping the box first (keyboard-wedge scanners).
+  useWedgeScanner((code) => void handleScan(code), !paymentOpen && !optionsItem && !variantItem && !cashupOpen);
+
+  // Make offline barcode/SKU entry work: remember every item's variants while
+  // online (throttled; skips anything fetched recently).
+  useEffect(() => {
+    if (!online || training.active || items.length === 0) return;
+    let cancelled = false;
+    void warmVariantCache(user?.business_id, items.filter((i) => i.is_active), { isCancelled: () => cancelled });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, items, user?.business_id]);
+
+  function clearExchange() {
+    setExchange(null);
+    if (searchParams.has("exchange_of") || searchParams.has("exchange_no")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("exchange_of");
+      next.delete("exchange_no");
+      setSearchParams(next, { replace: true });
     }
   }
 
@@ -358,17 +479,20 @@ export default function Pos() {
     specialInstructions: string | null;
   }) {
     if (!optionsItem) return;
-    const newLine: CartLine = {
-      key: `${optionsItem.id}::${Date.now()}`,
-      menuItemId: optionsItem.id,
-      name: optionsItem.name,
-      basePriceCents: optionsItem.price_cents,
-      quantity: 1,
-      requiresPreparation: optionsItem.requires_preparation,
-      ...result,
-    };
+    const newLine: CartLine = pendingVariant
+      ? buildVariantLine(optionsItem, pendingVariant, result)
+      : {
+          key: `${optionsItem.id}::${Date.now()}`,
+          menuItemId: optionsItem.id,
+          name: optionsItem.name,
+          basePriceCents: optionsItem.price_cents,
+          quantity: 1,
+          requiresPreparation: optionsItem.requires_preparation,
+          ...result,
+        };
     setCart((prev) => [...prev, newLine]);
     setOptionsItem(null);
+    setPendingVariant(null);
     // The mobile cart dialog only renders when the persistent side-cart
     // panel isn't shown (see isLandscapePOS above) — opening it while the
     // side panel IS shown rendered a full-screen dialog overlay with
@@ -397,6 +521,7 @@ export default function Pos() {
     setDiscountRand("");
     setDiscountReason("");
     setLoyaltyReward(null);
+    clearExchange();
     setIdempotencyKey(newIdempotencyKey());
     setErrorMessage(null);
     setSubmissionState({ status: "idle" });
@@ -499,14 +624,8 @@ export default function Pos() {
       // changes (see the effects above), but this guard is cheap insurance
       // against ever sending a redemption with no phone attached.
       loyalty_reward_id: loyaltyReward && salePhone ? loyaltyReward.id : undefined,
-      items: cart.map((line) => ({
-        menu_item_id: line.menuItemId,
-        quantity: line.quantity,
-        selected_option_ids: line.selectedOptionIds,
-        add_on_selections: line.addOnSelections.map((a) => ({ add_on_id: a.addOnId, quantity: a.quantity })),
-        removed_ingredient_ids: line.removedIngredientIds,
-        special_instructions: line.specialInstructions,
-      })),
+      items: cart.map(cartLineToSaleItem),
+      ...(exchange ? { exchange_of_order_id: exchange.id } : {}),
       // Exactly one of the two checkout payment shapes - see
       // PaymentDialog.tsx's "Split payment" entry point and
       // POSCheckoutPaymentPayload's docstring in src/types/index.ts.
@@ -529,6 +648,7 @@ export default function Pos() {
       quantity: l.quantity,
       detail:
         [
+          ...(l.variantLabel ? [l.variantLabel] : []),
           ...l.selectedOptionsDisplay.map((o) => o.optionName),
           ...l.addOnSelections.map((a) => `+ ${a.name}`),
           ...l.removedIngredientsDisplay.map((r) => `no ${r.name}`),
@@ -673,7 +793,7 @@ export default function Pos() {
         setErrorMessage(
           isPosNotEnabledError(apiErr)
             ? "POS is not available for this restaurant"
-            : apiErr?.message ?? "Could not complete the sale — try again"
+            : friendlyPosError(apiErr, "Could not complete the sale — try again")
         );
       }
     } finally {
@@ -899,6 +1019,8 @@ export default function Pos() {
           />
         </div>
 
+        <ScanField onScan={(c) => void handleScan(c)} busy={scanBusy} message={scanMessage} disabled={!tillOpen} />
+
         {categories.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-4 pb-3">
             <button
@@ -928,6 +1050,20 @@ export default function Pos() {
 
       {training.active && <TrainingBanner sales={training.sales.length} onExit={() => training.setActive(false)} />}
       <EventAccessBanner access={eventAccess} />
+      {exchange && (
+        <div
+          role="status"
+          data-testid="exchange-banner"
+          className="flex items-center justify-between gap-3 border-b border-border bg-primary/10 px-4 py-2 text-sm text-foreground"
+        >
+          <span className="font-semibold">
+            Exchange for order {exchange.number ? `#${exchange.number}` : "(refunded)"}
+          </span>
+          <button type="button" onClick={clearExchange} className="text-xs font-medium underline-offset-2 hover:underline">
+            Not an exchange
+          </button>
+        </div>
+      )}
       {!online && !training.active && (
         <div role="status" data-testid="offline-banner" className="border-b border-warning/40 bg-warning/15 px-4 py-2">
           <p className="text-sm font-semibold text-foreground">Offline - cash sales are saved on this device</p>
@@ -1391,7 +1527,23 @@ export default function Pos() {
 
       <CashupDialog open={cashupOpen} onClose={() => setCashupOpen(false)} />
 
-      <ItemOptionsDialog item={optionsItem} onClose={() => setOptionsItem(null)} onAdd={handleAddFromDialog} />
+      <ItemOptionsDialog
+        item={optionsItem}
+        onClose={() => {
+          setOptionsItem(null);
+          setPendingVariant(null);
+        }}
+        onAdd={handleAddFromDialog}
+      />
+      <VariantPicker
+        item={variantItem}
+        variants={variantList}
+        onSelect={handlePickVariant}
+        onClose={() => {
+          setVariantItem(null);
+          setVariantList(null);
+        }}
+      />
 
       <PaymentDialog
         open={paymentOpen}

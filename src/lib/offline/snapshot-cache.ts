@@ -10,6 +10,7 @@
  */
 import { apiClient } from "@/lib/api";
 import type { ApiFetchError } from "@/lib/api";
+import { clearVariantCache } from "@/lib/variants";
 import { safeGetItem, safeRemoveItem, safeSetItem } from "@/lib/safe-storage";
 
 const PREFIX = "nextgen_staff_snapshot_v1";
@@ -50,4 +51,5 @@ export async function cachedGet<T>(businessId: string | null | undefined, name: 
 export function clearSnapshots(businessId: string | null | undefined) {
   if (!businessId) return;
   for (const n of SNAPSHOT_NAMES) safeRemoveItem(k(businessId, n));
+  clearVariantCache(businessId);
 }

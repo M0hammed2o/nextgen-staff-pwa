@@ -33,10 +33,25 @@ interface ErrLike {
   noResponse?: boolean;
 }
 
+/**
+ * Codes that can never succeed on a replay of the same sale: the cart itself is
+ * wrong (a variant item with no variant, or a variant withdrawn from sale
+ * since the cashier saw it). Parked for a human; never retried automatically.
+ */
+export const PERMANENT_SALE_CODES: Record<string, string> = {
+  VARIANT_REQUIRED:
+    "A product in this sale needs a size or colour and none was chosen. Discard it and ring the sale up again.",
+  VARIANT_INACTIVE:
+    "A size or colour in this sale is no longer sold. Discard it and ring the sale up again with another variant.",
+};
+
 export function classifyError(err: unknown): Outcome {
   const e = (err ?? {}) as ErrLike;
   const message = e.message || "Could not upload this sale";
   const status = e.status;
+  if (e.code && PERMANENT_SALE_CODES[e.code] && !e.noResponse && status !== 401) {
+    return { kind: "conflict", message: PERMANENT_SALE_CODES[e.code], code: e.code };
+  }
   if (e.noResponse || status === undefined || status === 0) return { kind: "retry", message };
   if (status === 401) return { kind: "auth" };
   if (status === 403 || status === 409 || status === 422) return { kind: "conflict", message, code: e.code ?? null };

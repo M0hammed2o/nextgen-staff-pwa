@@ -75,6 +75,12 @@ export interface OrderItem {
   selected_options_snapshot: Array<{ group_name: string; option_name: string; price_delta_cents: number }> | null;
   removed_ingredients_snapshot: Array<{ id: string; name: string }> | null;
   special_instructions: string | null;
+  // Product variants (backend PRODUCT_VARIANTS_CONTRACT.md). Optional: absent
+  // on orders from a backend that predates the variants migration.
+  variant_id?: string | null;
+  variant_label_snapshot?: string | null;
+  sku_snapshot?: string | null;
+  returned_quantity?: number | null;
 }
 
 export type PaymentStatus =
@@ -268,10 +274,14 @@ export interface POSOrderItemRequest {
   add_on_selections: POSAddOnSelectionRequest[];
   removed_ingredient_ids: string[];
   special_instructions?: string | null;
+  /** Required by the server when the item has active variants. */
+  variant_id?: string | null;
 }
 
 export interface POSOrderCreateRequest {
   items: POSOrderItemRequest[];
+  /** Exchange: the refunded POS order this sale replaces (422 EXCHANGE_ORIGINAL_NOT_REFUNDED otherwise). */
+  exchange_of_order_id?: string | null;
   order_mode: "PICKUP" | "DELIVERY" | "DINE_IN";
   table_number?: string | null;
   customer_name?: string | null;
@@ -625,4 +635,8 @@ export interface CartLine {
   removedIngredientIds: string[];
   removedIngredientsDisplay: { id: string; name: string }[];
   specialInstructions: string | null;
+  // Product variant chosen for this line (label shown in the cart, id sent).
+  variantId?: string | null;
+  variantLabel?: string | null;
+  sku?: string | null;
 }

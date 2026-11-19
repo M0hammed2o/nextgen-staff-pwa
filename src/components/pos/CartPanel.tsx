@@ -131,6 +131,11 @@ export default function CartPanel({
                       {formatCurrency(lineTotalCents(line))}
                     </p>
                   </div>
+                  {line.variantLabel && (
+                    <p className="text-xs font-medium text-muted-foreground" data-testid="cart-variant-label">
+                      {line.variantLabel}
+                    </p>
+                  )}
                   {line.selectedOptionsDisplay.map((o) => (
                     <p key={o.groupName} className="text-xs text-muted-foreground">{o.optionName}</p>
                   ))}
