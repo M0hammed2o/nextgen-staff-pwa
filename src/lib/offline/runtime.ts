@@ -12,6 +12,7 @@ import { SyncEngine } from "./sync-engine";
 import { IndexedDbStore } from "./store";
 import { clearSnapshots } from "./snapshot-cache";
 import { trainingStore } from "./training";
+import { clockSkewMs, clockSkewStore } from "./capture";
 
 export const SALE_ENDPOINT = "/v1/business/pos/orders";
 
@@ -40,13 +41,21 @@ export function getEngine(): SyncEngine {
       isOnline: () => (typeof navigator === "undefined" ? true : navigator.onLine !== false),
       send: (entry, payload) => {
         // One call covers the whole sale; its idempotency key is the entry id,
-        // identical on every retry of this sale.
+        // identical on every retry of this sale. Any offline_captured_at /
+        // captured_by_user_id / offline_client_total_cents were stamped at sale
+        // time and ride along unchanged; an older entry without them is sent as is.
         const body = { ...payload.request, idempotency_key: entry.id };
         return apiFetch<Order>(SALE_ENDPOINT, {
           method: "POST",
           body: JSON.stringify(body),
           timeoutMs: 30_000,
           noAuthRedirect: true,
+          // Warn-only: the Date header is readable cross-origin only if the server
+          // exposes it. captured_at is never adjusted from this.
+          onResponse: (res) => {
+            const skew = clockSkewMs(res.headers?.get?.("Date"), Date.now());
+            if (skew !== null) clockSkewStore.set(skew);
+          },
         });
       },
       onSynced: () => onSyncedHook?.(),

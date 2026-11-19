@@ -313,6 +313,12 @@ export interface POSOrderCreateRequest {
   // above.
   payments?: POSPaymentAllocationRequest[];
   idempotency_key?: string | null;
+  // Offline capture (backend OFFLINE_POS_SYNC_CONTRACT.md). Stamped by
+  // OfflineQueue.enqueueSale at the moment of the sale; NEVER set on an online sale.
+  // The server prices the sale itself; offline_client_total_cents is informational.
+  offline_captured_at?: string;
+  captured_by_user_id?: string;
+  offline_client_total_cents?: number;
 }
 
 // A single tender line within a split-payment checkout. `PAY_BY_LINK` is

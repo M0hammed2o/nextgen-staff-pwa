@@ -82,6 +82,8 @@ export interface ApiFetchOptions extends RequestInit {
    * queued and waits for the user to sign in again.
    */
   noAuthRedirect?: boolean;
+  /** Called with every HTTP response (ok or not) before it is parsed; used to read the server's Date header. */
+  onResponse?: (res: Response) => void;
 }
 
 /**
@@ -122,7 +124,7 @@ export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {}
 ): Promise<T> {
-  const { timeoutMs, noAuthRedirect, ...requestInit } = options;
+  const { timeoutMs, noAuthRedirect, onResponse, ...requestInit } = options;
   const tokens = getStoredTokens();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -158,6 +160,8 @@ export async function apiFetch<T>(
       throw new Error("Session expired");
     }
   }
+
+  onResponse?.(res);
 
   if (!res.ok) {
     let message = "Request failed";

@@ -22,7 +22,7 @@ export function backoffDelayMs(attempts: number): number {
 
 export type Outcome =
   | { kind: "retry"; message: string }
-  | { kind: "auth" }
+  | { kind: "auth"; message?: string; code?: string }
   | { kind: "conflict"; message: string; code: string | null }
   | { kind: "failed"; message: string; code: string | null };
 
@@ -43,12 +43,35 @@ export const PERMANENT_SALE_CODES: Record<string, string> = {
     "A product in this sale needs a size or colour and none was chosen. Discard it and ring the sale up again.",
   VARIANT_INACTIVE:
     "A size or colour in this sale is no longer sold. Discard it and ring the sale up again with another variant.",
+  // Offline capture codes (backend OFFLINE_POS_SYNC_CONTRACT.md section 6). None of
+  // these can succeed on a retry of the same sale, so none is retried automatically.
+  OFFLINE_CAPTURE_TOO_OLD:
+    "This sale was taken too long ago (over 72 hours, or 36 hours for event vendors) and the server will no longer accept it. A manager must enter it by hand, then discard this one.",
+  OFFLINE_CAPTURE_IN_FUTURE:
+    "This device's clock was ahead when the sale was taken, so the server refused it. Fix the date and time on this device; a manager may need to enter the sale by hand.",
+  OFFLINE_CAPTURE_NO_TIMEZONE:
+    "This sale was saved without a time zone and the server refused it. A manager must enter it by hand.",
+  USER_NOT_FOUND:
+    "The cashier who took this sale is no longer an active user of this business. A manager must enter the sale by hand.",
+  // EVENT_TRADING_NOT_ALLOWED is deliberately absent: it is a 403 (parked below) and the
+  // server's own message names the reason (details.reason), which is more useful than ours.
+  INSUFFICIENT_CASH_TENDERED:
+    "The price went up while this device was offline, so the cash handed over no longer covers the sale. A manager must settle this one.",
+  PAYMENT_TOTAL_MISMATCH:
+    "The server's price for this sale no longer matches the payment recorded. A manager must settle this one.",
 };
+
+/** Codes that mean "the account/business is blocked right now": keep the sale and wait, never park or delete it. */
+export const SUSPENDED_CODE = "BUSINESS_SUSPENDED";
+const SUSPENDED_MESSAGE = "This business is suspended. The sale is safe on this device and will upload once access is restored.";
 
 export function classifyError(err: unknown): Outcome {
   const e = (err ?? {}) as ErrLike;
   const message = e.message || "Could not upload this sale";
   const status = e.status;
+  if (e.code === SUSPENDED_CODE && !e.noResponse && status !== 401) {
+    return { kind: "auth", message: SUSPENDED_MESSAGE, code: SUSPENDED_CODE };
+  }
   if (e.code && PERMANENT_SALE_CODES[e.code] && !e.noResponse && status !== 401) {
     return { kind: "conflict", message: PERMANENT_SALE_CODES[e.code], code: e.code };
   }
@@ -158,8 +181,8 @@ export class SyncEngine {
             return; // network/server trouble: stop, the tick retries after backoff
           }
           if (outcome.kind === "auth") {
-            await queue.markAuthWait(entry.id);
-            this.authRequired = true;
+            await queue.markAuthWait(entry.id, outcome.message, outcome.code);
+            this.authRequired = outcome.code !== SUSPENDED_CODE;
             this.blockedOn401 = true;
             return;
           }

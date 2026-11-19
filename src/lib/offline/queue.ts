@@ -9,6 +9,7 @@
 import type { SalePayload, QueueEntry, AuditLine } from "./types";
 import { OfflineQueueError } from "./types";
 import type { OfflineStore } from "./store";
+import { isoWithOffset } from "./capture";
 import { decryptJson, deleteDeviceKey, encryptJson, getOrCreateDeviceKey } from "./crypto";
 
 const DEVICE_ID_META = "device_id";
@@ -77,11 +78,21 @@ export class OfflineQueue {
   enqueueSale(input: EnqueueInput): Promise<QueueEntry> {
     return this.exclusive(async () => {
       const key = input.payload.request.idempotency_key || randomId();
-      const request = { ...input.payload.request, idempotency_key: key };
-      const payload: SalePayload = { ...input.payload, request };
-
       const existing = (await this.store.getAllEntries()).find((e) => e.id === key);
       if (existing) return existing;
+
+      // Stamped HERE, at the moment of the sale, never at sync time. These are
+      // sent unchanged on every replay. An entry already carrying them (should
+      // not happen) keeps its originals.
+      const base = input.payload.request;
+      const request = {
+        ...base,
+        idempotency_key: key,
+        offline_captured_at: base.offline_captured_at ?? isoWithOffset(this.now()),
+        captured_by_user_id: base.captured_by_user_id ?? input.staffId,
+        offline_client_total_cents: base.offline_client_total_cents ?? Math.max(0, Math.round(input.payload.snapshot.total_cents)),
+      };
+      const payload: SalePayload = { ...input.payload, request };
 
       const cryptoKey = await getOrCreateDeviceKey(this.store);
       const blob = await encryptJson(cryptoKey, payload);
@@ -198,9 +209,9 @@ export class OfflineQueue {
   }
 
   /** 401: keep it, do not count it as a failed attempt, wait for re-login. */
-  markAuthWait(id: string) {
+  markAuthWait(id: string, message = "Sign in again to upload this sale", code = "AUTH") {
     return this.exclusive(() =>
-      this.update(id, (e) => ({ ...e, status: "pending", last_error: "Sign in again to upload this sale", last_error_code: "AUTH" })),
+      this.update(id, (e) => ({ ...e, status: "pending", last_error: message, last_error_code: code })),
     );
   }
 

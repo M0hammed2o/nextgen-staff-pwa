@@ -13,6 +13,8 @@ const MESSAGES: Record<string, string> = {
   REFUND_EXCEEDS_RETURNED_VALUE:
     "The refund is more than the value of the returned items. Lower the amount or leave it blank.",
   RETURN_EXCEEDS_SOLD: "You are returning more than was sold (or already returned) on one of the lines.",
+  OFFLINE_REFUND_REQUIRES_OWNER:
+    "This sale was taken offline and could not be tied to a till session, so only the owner can refund its cash. Ask the owner to do the refund.",
   RETURN_ITEMS_REQUIRED:
     "Say which items came back before putting stock back. Choose the returned items and try again.",
 };
