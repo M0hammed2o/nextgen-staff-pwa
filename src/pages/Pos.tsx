@@ -895,7 +895,11 @@ export default function Pos() {
       errorMessage={null}
       onCheckout={() => setPaymentOpen(true)}
       checkoutBlockedReason={checkoutBlockedReason}
-      readyNotify={{
+      // Souk event vendors have no WhatsApp number of their own (by design,
+      // KNOWN_BUGS BUG-0210), so the ready message could never be sent: the
+      // opt-in is hidden rather than promising the customer a message. The
+      // /board collection screen is their "order ready" path.
+      readyNotify={eventAccess.isEventVendor ? undefined : {
         phone: notifyPhone,
         onPhoneChange: setNotifyPhone,
         consent: notifyConsent,

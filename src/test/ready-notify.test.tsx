@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
@@ -174,6 +174,22 @@ describe("ready-notify opt-in at the till", () => {
     expect(screen.queryByRole("checkbox", { name: /Notify customer when ready/i })).toBeNull();
     expect(screen.queryByTestId("ready-notify")).toBeNull();
     expect(screen.queryByTestId("ready-notify-offline")).toBeNull();
+  });
+
+  it("is hidden for a souk event vendor, who has no WhatsApp number to send from (BUG-0210)", async () => {
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((path: string) =>
+      path === "/v1/business/event-access"
+        ? Promise.resolve({ is_event_vendor: true, access_level: "TRADE", reason: "PAID_DAY", events: [] })
+        : base(path),
+    );
+    renderPos();
+    await addBurger();
+    await waitFor(() => expect(screen.queryByTestId("ready-notify")).toBeNull());
+    expect(screen.queryByRole("checkbox", { name: /Notify customer when ready/i })).toBeNull();
+    payCashExact();
+    await screen.findByText("Sale complete");
+    expect(postMock.mock.calls[0][1].customer_phone).toBeNull();
   });
 });
 
