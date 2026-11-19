@@ -72,7 +72,11 @@ export default function Pos() {
   // loaded), and a variant already chosen that still needs the options dialog.
   const [variantItem, setVariantItem] = useState<MenuItemEntry | null>(null);
   const [variantList, setVariantList] = useState<ProductVariant[] | null>(null);
-  const variantTapToken = useRef(0);
+  // Dialogs asked for by tile taps whose lookups finished while another
+  // dialog was open (or in the same tick). Drained one at a time below, so
+  // no tap is ever lost (Souk e2e: a fast second tap used to drop the first).
+  const tapDialogQueue = useRef<Array<{ kind: "variants"; item: MenuItemEntry; list: ProductVariant[] } | { kind: "options"; item: MenuItemEntry }>>([]);
+  const [tapDialogTick, setTapDialogTick] = useState(0);
   const [pendingVariant, setPendingVariant] = useState<ProductVariant | null>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanMessage, setScanMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
@@ -372,23 +376,45 @@ export default function Pos() {
   // sold without one (VARIANT_REQUIRED, mapped to a clear message), so a
   // failed lookup can never sell the wrong thing, and it never blocks a
   // restaurant sale.
+  //
+  // Every tap is handled on its own: a plain item is added the moment its
+  // lookup answers, and a tap that needs a dialog (variant picker or options)
+  // is queued and opened when no other dialog is showing. There used to be a
+  // "latest tap wins" token here, which silently dropped item A when item B
+  // was tapped before A's lookup came back. Lookups that finish out of order
+  // may add lines out of tap order; each tap still adds exactly one.
   async function loadVariantsFor(item: MenuItemEntry) {
-    const token = ++variantTapToken.current;
     let list: ProductVariant[] = [];
     try {
       list = await fetchItemVariants(user?.business_id, item);
     } catch {
       list = [];
     }
-    if (token !== variantTapToken.current) return; // a newer tap superseded this one
     if (list.length === 0) {
-      if (itemHasChoices(item)) setOptionsItem(item);
+      if (itemHasChoices(item)) requestTapDialog({ kind: "options", item });
       else addSimpleItem(item);
       return;
     }
-    setVariantList(list);
-    setVariantItem(item);
+    requestTapDialog({ kind: "variants", item, list });
   }
+
+  function requestTapDialog(req: (typeof tapDialogQueue.current)[number]) {
+    tapDialogQueue.current.push(req);
+    setTapDialogTick((t) => t + 1);
+  }
+
+  // Open the next queued dialog once none is showing.
+  useEffect(() => {
+    if (optionsItem || variantItem) return;
+    const next = tapDialogQueue.current.shift();
+    if (!next) return;
+    if (next.kind === "options") {
+      setOptionsItem(next.item);
+    } else {
+      setVariantList(next.list);
+      setVariantItem(next.item);
+    }
+  }, [optionsItem, variantItem, tapDialogTick]);
 
   function handleTileTap(item: MenuItemEntry) {
     void loadVariantsFor(item);

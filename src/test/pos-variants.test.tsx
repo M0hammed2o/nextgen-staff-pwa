@@ -320,3 +320,74 @@ describe("exchange", () => {
     expect(screen.queryByTestId("exchange-banner")).toBeNull();
   });
 });
+
+// Souk e2e: a quick second tile tap used to drop the first item, because a
+// "latest tap wins" token discarded any lookup that was still pending.
+describe("quick taps: every tap counts", () => {
+  const COLA = { ...TEE, id: "item-cola", name: "Cola", price_cents: 2000 };
+
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  function withPendingLookup(itemId: string, items: unknown[]) {
+    const pending = deferred<unknown[]>();
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((path: string) => {
+      if (path === "/v1/business/menu/items") return Promise.resolve(items);
+      if (path === `/v1/business/menu/items/${itemId}/variants`) return pending.promise;
+      if (path === "/v1/business/menu/items/item-cola/variants") return Promise.resolve([]); // when not the held one
+      return base(path);
+    });
+    return pending;
+  }
+
+  async function soldItems() {
+    await payCashExact();
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    return (postMock.mock.calls[0][1] as { items: Array<Record<string, unknown>> }).items;
+  }
+
+  it("tap A (lookup still pending) then B: both end up in the cart", async () => {
+    // Cola's lookup is held open; Burger's answers at once
+    const pending = withPendingLookup("item-cola", [COLA, BURGER]);
+    renderPos();
+    fireEvent.click(await screen.findByText("Cola"));
+    fireEvent.click(await screen.findByText("Burger"));
+    pending.resolve([]);
+    const items = await soldItems();
+    expect(items.map((i) => i.menu_item_id).sort()).toEqual(["item-burger", "item-cola"]);
+    expect(items.every((i) => i.quantity === 1)).toBe(true);
+  });
+
+  it("tap a variant item (pending) then a plain item: the plain one is added and the picker still opens", async () => {
+    const pending = withPendingLookup("item-tee", [TEE, BURGER]);
+    renderPos();
+    fireEvent.click(await screen.findByText("Tee"));
+    fireEvent.click(await screen.findByText("Burger"));
+    pending.resolve([VAR_M, VAR_L]);
+    fireEvent.click(await screen.findByTestId("variant-TEE-M-BLK"));
+    expect(await screen.findByTestId("cart-variant-label")).toHaveTextContent("M / Black");
+    const items = await soldItems();
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ menu_item_id: "item-burger", quantity: 1 }),
+        expect.objectContaining({ menu_item_id: "item-tee", variant_id: "var-m", quantity: 1 }),
+      ]),
+    );
+    expect(items).toHaveLength(2);
+  });
+
+  it("two taps on the same plain item add it twice (one per tap), never more", async () => {
+    renderPos();
+    const tile = await screen.findByText("Burger");
+    fireEvent.click(tile);
+    fireEvent.click(tile);
+    await waitFor(() => expect(getMock.mock.calls.filter(([p]) => p === "/v1/business/menu/items/item-burger/variants").length).toBeGreaterThanOrEqual(2));
+    const items = await soldItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ menu_item_id: "item-burger", quantity: 2 });
+  });
+});
