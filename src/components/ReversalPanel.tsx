@@ -1,8 +1,14 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
 import type { Order } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
+import {
+  buildReturnRefundBody, canStartExchange, checkRefundAmount, clampReturnQty, estimateRefundCents, exchangePath,
+  isVariantLine, returnableQty, validateReturn, type ReturnQuantities,
+} from "@/lib/returns";
+import { friendlyPosError } from "@/lib/pos-errors";
 
 interface ReversalPanelProps {
   order: Order;
@@ -36,7 +42,14 @@ export default function ReversalPanel({
 }: ReversalPanelProps) {
   const [mode, setMode] = useState<"none" | "void" | "refund">("none");
   const [reason, setReason] = useState("");
-  const [restoreStock, setRestoreStock] = useState(false);
+  // Retail (variant) sales default to a line-by-line return with restock ON;
+  // a restaurant sale keeps the original whole-sale refund with restock OFF.
+  const hasVariantLines = order.items.some(isVariantLine);
+  const [restoreStock, setRestoreStock] = useState(hasVariantLines);
+  const [returnMode, setReturnMode] = useState(hasVariantLines);
+  const [qty, setQty] = useState<ReturnQuantities>({});
+  const [amountInput, setAmountInput] = useState("");
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Called unconditionally, above every early return below, per the Rules
@@ -70,6 +83,15 @@ export default function ReversalPanel({
             {order.refund_reference ? ` · ${order.refund_reference}` : ""}
           </p>
         ) : null}
+        {canStartExchange(order) && (
+          <button
+            type="button"
+            onClick={() => navigate(exchangePath(order))}
+            className="mt-3 h-12 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground active:opacity-90"
+          >
+            Exchange: ring up the replacement
+          </button>
+        )}
       </div>
     );
   }
@@ -92,10 +114,26 @@ export default function ReversalPanel({
     );
   }
 
+  const lineReturn = mode === "refund" && returnMode;
+  const returnCheck = validateReturn(order, qty);
+  const estimateCents = lineReturn && returnCheck.ok ? estimateRefundCents(order, qty) : 0;
+  const amountCheck = checkRefundAmount(estimateCents, amountInput);
+  const anyReturnable = order.items.some((i) => returnableQty(i) > 0);
+
   async function submit() {
     if (!reason.trim()) {
       setError("Give a reason — it appears on the audit trail.");
       return;
+    }
+    if (lineReturn) {
+      if (!returnCheck.ok) {
+        setError(returnCheck.error);
+        return;
+      }
+      if (!amountCheck.ok) {
+        setError(amountCheck.error);
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -104,6 +142,18 @@ export default function ReversalPanel({
         await apiClient.post(`/v1/business/pos/orders/${order.id}/void`, {
           reason: reason.trim(),
         });
+      } else if (lineReturn) {
+        // ONE call: an order can only be refunded once, so every returned
+        // line goes in this single request.
+        await apiClient.post(
+          `/v1/business/pos/orders/${order.id}/refund`,
+          buildReturnRefundBody({
+            reason,
+            restoreStock,
+            lines: returnCheck.lines,
+            amountCents: amountCheck.amountCents,
+          }),
+        );
       } else {
         await apiClient.post(`/v1/business/pos/orders/${order.id}/refund`, {
           reason: reason.trim(),
@@ -112,13 +162,12 @@ export default function ReversalPanel({
       }
       setMode("none");
       setReason("");
-      setRestoreStock(false);
+      setRestoreStock(hasVariantLines);
+      setQty({});
+      setAmountInput("");
       onDone();
     } catch (err) {
-      setError(
-        (err as { message?: string })?.message ??
-          "Could not complete that — try again."
-      );
+      setError(friendlyPosError(err, "Could not complete that — try again."));
     } finally {
       setBusy(false);
     }
@@ -151,8 +200,92 @@ export default function ReversalPanel({
             {mode === "void"
               ? "Rung up by mistake. The full amount is reversed" +
                 (inventoryEnabled ? " and the ingredients go back to stock." : ".")
-              : `Refunding ${formatCurrency(order.total_cents)} to the customer.`}
+              : lineReturn
+                ? "Choose what came back. The refund is the value of those items."
+                : `Refunding ${formatCurrency(order.total_cents)} to the customer.`}
           </p>
+
+          {mode === "refund" && anyReturnable && (
+            <button
+              type="button"
+              onClick={() => setReturnMode((v) => !v)}
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+            >
+              {returnMode ? "Refund the whole sale instead" : "Choose items to return instead"}
+            </button>
+          )}
+
+          {lineReturn && (
+            <ul className="space-y-2" data-testid="return-lines">
+              {order.items.map((item) => {
+                const max = returnableQty(item);
+                const q = qty[item.id] ?? 0;
+                return (
+                  <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">{item.name_snapshot}</p>
+                      {item.variant_label_snapshot && (
+                        <p className="text-xs text-muted-foreground">{item.variant_label_snapshot}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Sold {item.quantity}
+                        {(item.returned_quantity ?? 0) > 0 ? `, already returned ${item.returned_quantity}` : ""}
+                      </p>
+                    </div>
+                    {max === 0 ? (
+                      <span className="text-xs text-muted-foreground">All returned</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label={`Return fewer ${item.name_snapshot}`}
+                          onClick={() => setQty((p) => ({ ...p, [item.id]: clampReturnQty(item, q - 1) }))}
+                          className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-lg"
+                        >
+                          −
+                        </button>
+                        <span className="w-6 text-center text-sm font-semibold tabular-nums" data-testid={`return-qty-${item.id}`}>
+                          {q}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Return more ${item.name_snapshot}`}
+                          onClick={() => setQty((p) => ({ ...p, [item.id]: clampReturnQty(item, q + 1) }))}
+                          disabled={q >= max}
+                          className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-lg disabled:opacity-40"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {lineReturn && returnCheck.ok && (
+            <div className="space-y-1">
+              <p className="text-sm text-foreground" data-testid="refund-estimate">
+                Refund: <span className="font-semibold">{formatCurrency(estimateCents)}</span>
+              </p>
+              <label className="block">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Lower the amount (optional, for example a restocking fee). It cannot be more than{" "}
+                  {formatCurrency(estimateCents)}.
+                </span>
+                <input
+                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={(estimateCents / 100).toFixed(2)}
+                  aria-label="Refund amount in rand"
+                  className="mt-1 h-12 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                />
+              </label>
+              {!amountCheck.ok && <p className="text-xs font-medium text-destructive">{amountCheck.error}</p>}
+            </div>
+          )}
 
           <label className="block">
             <span className="text-xs font-medium text-muted-foreground">Reason</span>
@@ -167,7 +300,7 @@ export default function ReversalPanel({
             />
           </label>
 
-          {mode === "refund" && inventoryEnabled && (
+          {mode === "refund" && (inventoryEnabled || hasVariantLines) && (
             <label className="flex items-start gap-3 rounded-lg border border-border p-3">
               <input
                 type="checkbox"

@@ -45,7 +45,7 @@ const STATUS_FLOW: Record<string, { label: string; next: OrderStatus; variant: s
   ],
 };
 
-function getReadyAction(orderMode: string): { label: string; next: OrderStatus; variant: string } {
+export function getReadyAction(orderMode: string): { label: string; next: OrderStatus; variant: string } {
   if (orderMode === "DELIVERY") {
     return { label: "Delivered", next: "DELIVERED", variant: "bg-primary text-primary-foreground" };
   }

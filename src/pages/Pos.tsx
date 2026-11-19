@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { apiClient } from "@/lib/api";
 import type { ApiFetchError } from "@/lib/api";
 import type {
@@ -24,10 +25,25 @@ import { useBrand } from "@/lib/brand-provider";
 import { RestaurantMark } from "@/components/RestaurantIdentity";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle, AlertTriangle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
+import { cachedGet } from "@/lib/offline/snapshot-cache";
+import { resolveSaleCustomerPhone } from "@/lib/ready-notify";
+import { useOffline } from "@/lib/offline/offline-context";
+import { useTrainingMode } from "@/lib/offline/training";
+import { useEventAccess } from "@/lib/offline/event-access";
+import type { SnapshotLine } from "@/lib/offline/types";
+import ConnectivityBadge from "@/components/offline/ConnectivityBadge";
+import { TrainingBanner, EventAccessBanner, OfflineWarnings } from "@/components/offline/TillBanners";
+import LocalSaleOverlay, { LocalSlip, type LocalSaleView } from "@/components/offline/LocalSaleOverlay";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
 import { useTouchKeyboardContext, useTouchKeyboardSpacerStyle } from "@/lib/touch-keyboard";
 import { useIsLandscapePOS } from "@/hooks/useIsLandscapePOS";
+import VariantPicker from "@/components/pos/VariantPicker";
+import ScanField, { useWedgeScanner } from "@/components/pos/ScanField";
+import { fetchItemVariants, resolveScan, warmVariantCache, type ProductVariant } from "@/lib/variants";
+import { addLineToCart, buildVariantLine, cartLineToSaleItem } from "@/lib/cart-variant";
+import { parseExchangeParams } from "@/lib/returns";
+import { friendlyPosError } from "@/lib/pos-errors";
 
 function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -52,6 +68,19 @@ export default function Pos() {
   const [activeCategory, setActiveCategory] = useState<string | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [optionsItem, setOptionsItem] = useState<MenuItemEntry | null>(null);
+  // Variant flow: the item whose picker is open, its variants (null until
+  // loaded), and a variant already chosen that still needs the options dialog.
+  const [variantItem, setVariantItem] = useState<MenuItemEntry | null>(null);
+  const [variantList, setVariantList] = useState<ProductVariant[] | null>(null);
+  const variantTapToken = useRef(0);
+  const [pendingVariant, setPendingVariant] = useState<ProductVariant | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanMessage, setScanMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
+  // Exchange: the refunded order this sale replaces (from /pos?exchange_of=..).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [exchange, setExchange] = useState<{ id: string; number: string } | null>(() =>
+    parseExchangeParams(searchParams),
+  );
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [cashupOpen, setCashupOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -60,6 +89,10 @@ export default function Pos() {
   const [tableNumber, setTableNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  // "Notify when ready (WhatsApp)" opt-in. Deliberately NOT persisted in the
+  // draft (consent must be given afresh for each sale) and cleared per sale.
+  const [notifyPhone, setNotifyPhone] = useState("");
+  const [notifyConsent, setNotifyConsent] = useState(false);
   const [discountRand, setDiscountRand] = useState("");
   const [discountReason, setDiscountReason] = useState("");
   // The cashier's current reward pick, if any — see LoyaltyRewardPicker.tsx
@@ -80,6 +113,10 @@ export default function Pos() {
   // "WhatsApp isn't available" copy) — never gates anything security-related.
   const [receiptChoice, setReceiptChoice] = useState<"PRINT" | "WHATSAPP" | "BOTH" | "NONE" | null>(null);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  // A sale that never reached the server: either captured offline (queued) or
+  // a training sale (never sent). Shown instead of the server-order overlay.
+  const [localSale, setLocalSale] = useState<LocalSaleView | null>(null);
+  const [showLocalSlip, setShowLocalSlip] = useState(false);
 
   // ── Draft persistence + checkout submission state machine ───────────────
   // See src/lib/pos-draft.ts for the full design rationale. Short version:
@@ -95,19 +132,28 @@ export default function Pos() {
 
   const { data: categories = [], isLoading: loadingCategories } = useQuery({
     queryKey: ["pos-categories"],
-    queryFn: () => apiClient.get<MenuCategoryEntry[]>("/v1/business/menu/categories"),
+    queryFn: () => cachedGet<MenuCategoryEntry[]>(user?.business_id, "categories", "/v1/business/menu/categories"),
+    networkMode: "always", // offline must fall back to the cached menu, not pause forever
   });
 
   const { data: items = [], isLoading: loadingItems, error: itemsError } = useQuery({
     queryKey: ["pos-items"],
-    queryFn: () => apiClient.get<MenuItemEntry[]>("/v1/business/menu/items"),
+    queryFn: () => cachedGet<MenuItemEntry[]>(user?.business_id, "items", "/v1/business/menu/items"),
+    networkMode: "always",
   });
 
   const { data: till, isFetched: tillFetched } = useQuery({
     queryKey: ["till-current"],
-    queryFn: () => apiClient.get<TillSession | null>("/v1/business/pos/till/current"),
+    queryFn: () => cachedGet<TillSession | null>(user?.business_id, "till", "/v1/business/pos/till/current"),
+    networkMode: "always",
   });
-  const tillOpen = !!till;
+  // Offline resilience, training and event gating (src/lib/offline/*).
+  const offline = useOffline();
+  const training = useTrainingMode();
+  const eventAccess = useEventAccess();
+  const online = offline.online;
+  // Training runs a virtual till: no real till session is needed or touched.
+  const tillOpen = !!till || training.active;
 
   // -- Paid-but-unconsumed Pay-by-Link recovery --------------------------
   // A Pay-by-Link intent that reached PAID but was never consumed into an
@@ -151,7 +197,8 @@ export default function Pos() {
 
   const { data: posSettings = null } = useQuery({
     queryKey: ["pos-settings"],
-    queryFn: () => apiClient.get<POSSettings>("/v1/business/pos/settings"),
+    queryFn: () => cachedGet<POSSettings>(user?.business_id, "settings", "/v1/business/pos/settings"),
+    networkMode: "always",
   });
 
   // Entitlement only. A `true` here means the module is switched on for this
@@ -314,11 +361,112 @@ export default function Pos() {
     });
   }
 
+  // Any item may have variants and the menu list does not say which, so a tap
+  // asks for them (cached after the first time, so instant offline and on
+  // repeat taps). An item with none behaves exactly as before.
+  // The picker dialog only opens once variants are known to exist, so a plain
+  // menu item never flashes it. If the lookup fails (older backend, 5xx) the
+  // item is treated as a plain item: the server still refuses a variant item
+  // sold without one (VARIANT_REQUIRED, mapped to a clear message), so a
+  // failed lookup can never sell the wrong thing, and it never blocks a
+  // restaurant sale.
+  async function loadVariantsFor(item: MenuItemEntry) {
+    const token = ++variantTapToken.current;
+    let list: ProductVariant[] = [];
+    try {
+      list = await fetchItemVariants(user?.business_id, item);
+    } catch {
+      list = [];
+    }
+    if (token !== variantTapToken.current) return; // a newer tap superseded this one
+    if (list.length === 0) {
+      if (itemHasChoices(item)) setOptionsItem(item);
+      else addSimpleItem(item);
+      return;
+    }
+    setVariantList(list);
+    setVariantItem(item);
+  }
+
   function handleTileTap(item: MenuItemEntry) {
+    void loadVariantsFor(item);
+  }
+
+  function addVariantToCart(item: MenuItemEntry, variant: ProductVariant) {
     if (itemHasChoices(item)) {
+      setPendingVariant(variant);
       setOptionsItem(item);
-    } else {
-      addSimpleItem(item);
+      return;
+    }
+    setCart((prev) => addLineToCart(prev, buildVariantLine(item, variant)));
+    if (!isLandscapePOS) setMobileCartOpen(true);
+  }
+
+  function handlePickVariant(variant: ProductVariant) {
+    const item = variantItem;
+    if (!item) return;
+    setVariantItem(null);
+    setVariantList(null);
+    addVariantToCart(item, variant);
+  }
+
+  async function handleScan(code: string) {
+    if (!tillOpen) {
+      setScanMessage({ kind: "error", text: "Open the till before scanning." });
+      return;
+    }
+    setScanBusy(true);
+    setScanMessage(null);
+    try {
+      const res = await resolveScan(user?.business_id, code, online);
+      if (res.kind === "not_found") {
+        setScanMessage({
+          kind: "error",
+          text: `"${code}" was not found${online ? "" : " on this device (offline: only products already loaded can be scanned)"}.`,
+        });
+        return;
+      }
+      if (res.kind === "error") {
+        setScanMessage({ kind: "error", text: res.message });
+        return;
+      }
+      const { result } = res;
+      const item =
+        items.find((i) => i.id === result.menu_item_id) ??
+        ({
+          id: result.menu_item_id, category_id: null, name: result.menu_item_name, description: null,
+          price_cents: result.base_price_cents, currency: "ZAR", options_json: null, add_ons: [], is_active: true,
+          sort_order: 0, image_url: null, requires_preparation: false,
+        } as MenuItemEntry);
+      setScanMessage({ kind: "info", text: `Added ${item.name} (${result.variant.label})` });
+      addVariantToCart(item, result.variant);
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  // Scan without tapping the box first (keyboard-wedge scanners).
+  useWedgeScanner((code) => void handleScan(code), !paymentOpen && !optionsItem && !variantItem && !cashupOpen);
+
+  // Make offline barcode/SKU entry work: remember every item's variants while
+  // online (throttled; skips anything fetched recently).
+  useEffect(() => {
+    if (!online || training.active || items.length === 0) return;
+    let cancelled = false;
+    void warmVariantCache(user?.business_id, items.filter((i) => i.is_active), { isCancelled: () => cancelled });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, items, user?.business_id]);
+
+  function clearExchange() {
+    setExchange(null);
+    if (searchParams.has("exchange_of") || searchParams.has("exchange_no")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("exchange_of");
+      next.delete("exchange_no");
+      setSearchParams(next, { replace: true });
     }
   }
 
@@ -331,17 +479,20 @@ export default function Pos() {
     specialInstructions: string | null;
   }) {
     if (!optionsItem) return;
-    const newLine: CartLine = {
-      key: `${optionsItem.id}::${Date.now()}`,
-      menuItemId: optionsItem.id,
-      name: optionsItem.name,
-      basePriceCents: optionsItem.price_cents,
-      quantity: 1,
-      requiresPreparation: optionsItem.requires_preparation,
-      ...result,
-    };
+    const newLine: CartLine = pendingVariant
+      ? buildVariantLine(optionsItem, pendingVariant, result)
+      : {
+          key: `${optionsItem.id}::${Date.now()}`,
+          menuItemId: optionsItem.id,
+          name: optionsItem.name,
+          basePriceCents: optionsItem.price_cents,
+          quantity: 1,
+          requiresPreparation: optionsItem.requires_preparation,
+          ...result,
+        };
     setCart((prev) => [...prev, newLine]);
     setOptionsItem(null);
+    setPendingVariant(null);
     // The mobile cart dialog only renders when the persistent side-cart
     // panel isn't shown (see isLandscapePOS above) — opening it while the
     // side panel IS shown rendered a full-screen dialog overlay with
@@ -365,9 +516,12 @@ export default function Pos() {
     setTableNumber("");
     setCustomerName("");
     setCustomerPhone("");
+    setNotifyPhone("");
+    setNotifyConsent(false);
     setDiscountRand("");
     setDiscountReason("");
     setLoyaltyReward(null);
+    clearExchange();
     setIdempotencyKey(newIdempotencyKey());
     setErrorMessage(null);
     setSubmissionState({ status: "idle" });
@@ -447,31 +601,32 @@ export default function Pos() {
     }
   }
 
-  async function handleConfirmPayment(payload: POSCheckoutPaymentPayload) {
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    const body: POSOrderCreateRequest = {
+  // `allowNotify` is false for anything captured offline: WhatsApp needs
+  // internet, so an offline sale must never carry the notify number.
+  function buildSaleBody(payload: POSCheckoutPaymentPayload, key: string, allowNotify = false): POSOrderCreateRequest {
+    const salePhone = resolveSaleCustomerPhone({
+      loyaltyPhone: customerPhone,
+      notifyPhone,
+      consent: notifyConsent,
+      available: allowNotify && online && !training.active,
+      rewardApplied: !!loyaltyReward,
+    });
+    return {
       order_mode: orderMode,
       table_number: orderMode === "DINE_IN" ? (tableNumber.trim() || null) : null,
       customer_name: customerName.trim() || null,
-      customer_phone: customerPhone.trim() || null,
+      customer_phone: salePhone,
       discount_cents: discountCents > 0 ? discountCents : undefined,
       discount_reason: discountCents > 0 ? (discountReason.trim() || null) : null,
       // The backend requires customer_phone whenever this is set
       // (routes_pos.py::POSOrderCreateRequest.validate_loyalty_redemption)
-      // — loyaltyReward is already cleared the instant customerPhone
+      // - loyaltyReward is already cleared the instant customerPhone
       // changes (see the effects above), but this guard is cheap insurance
       // against ever sending a redemption with no phone attached.
-      loyalty_reward_id: loyaltyReward && customerPhone.trim() ? loyaltyReward.id : undefined,
-      items: cart.map((line) => ({
-        menu_item_id: line.menuItemId,
-        quantity: line.quantity,
-        selected_option_ids: line.selectedOptionIds,
-        add_on_selections: line.addOnSelections.map((a) => ({ add_on_id: a.addOnId, quantity: a.quantity })),
-        removed_ingredient_ids: line.removedIngredientIds,
-        special_instructions: line.specialInstructions,
-      })),
-      // Exactly one of the two checkout payment shapes — see
+      loyalty_reward_id: loyaltyReward && salePhone ? loyaltyReward.id : undefined,
+      items: cart.map(cartLineToSaleItem),
+      ...(exchange ? { exchange_of_order_id: exchange.id } : {}),
+      // Exactly one of the two checkout payment shapes - see
       // PaymentDialog.tsx's "Split payment" entry point and
       // POSCheckoutPaymentPayload's docstring in src/types/index.ts.
       ...("payments" in payload
@@ -481,8 +636,124 @@ export default function Pos() {
             cash_tendered_cents: payload.cash_tendered_cents,
             payment_reference: payload.payment_reference,
           }),
-      idempotency_key: idempotencyKey,
+      idempotency_key: key,
     };
+  }
+
+  // What the cashier saw, for the queue screen / provisional slip. DISPLAY
+  // ONLY: the server re-prices every line on sync.
+  function snapshotLines(): SnapshotLine[] {
+    return cart.map((l) => ({
+      name: l.name,
+      quantity: l.quantity,
+      detail:
+        [
+          ...(l.variantLabel ? [l.variantLabel] : []),
+          ...l.selectedOptionsDisplay.map((o) => o.optionName),
+          ...l.addOnSelections.map((a) => `+ ${a.name}`),
+          ...l.removedIngredientsDisplay.map((r) => `no ${r.name}`),
+        ].join(", ") || null,
+      line_total_cents: lineTotalCents(l),
+    }));
+  }
+
+  function cashFigures(payload: POSCheckoutPaymentPayload) {
+    const tendered = "payment_method" in payload ? (payload.cash_tendered_cents ?? null) : null;
+    return { tendered, change: tendered != null ? Math.max(0, tendered - estimatedTotalCents) : null };
+  }
+
+  function showLocalSaleAndReset(view: LocalSaleView) {
+    setPaymentOpen(false);
+    setMobileCartOpen(false);
+    closeTouchKeyboard();
+    resetForNextSale();
+    setLocalSale(view);
+  }
+
+  // Training: the sale stays in memory. No apiClient call happens here.
+  function completeTrainingSale(payload: POSCheckoutPaymentPayload) {
+    const { tendered, change } = cashFigures(payload);
+    const sale = training.addSale({
+      total_cents: estimatedTotalCents,
+      cash_tendered_cents: tendered,
+      change_due_cents: change,
+      lines: snapshotLines(),
+    });
+    showLocalSaleAndReset({ kind: "training", ...sale });
+  }
+
+  // Durable offline capture of a CASH sale under `key` (the idempotency key
+  // the server will see, identical on every retry). Returns false if it could
+  // not be captured, in which case nothing has been recorded.
+  async function captureCashSaleOffline(payload: POSCheckoutPaymentPayload, key: string): Promise<boolean> {
+    if (!eventAccess.canTrade) {
+      setErrorMessage("Trading is not open for this event vendor, so this sale cannot be saved.");
+      return false;
+    }
+    if (loyaltyReward) {
+      setErrorMessage("Loyalty rewards need internet. Remove the reward to take this sale offline.");
+      return false;
+    }
+    const { tendered, change } = cashFigures(payload);
+    const lines = snapshotLines();
+    try {
+      const entry = await offline.enqueueSale({
+        request: buildSaleBody(payload, key),
+        snapshot: { lines, total_cents: estimatedTotalCents, cash_tendered_cents: tendered, change_due_cents: change },
+      });
+      showLocalSaleAndReset({
+        kind: "offline",
+        ref: entry.local_ref,
+        created_at: entry.created_at,
+        total_cents: estimatedTotalCents,
+        cash_tendered_cents: tendered,
+        change_due_cents: change,
+        lines,
+      });
+      return true;
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Could not save the sale on this device.");
+      return false;
+    }
+  }
+
+  function handlePrintLocalSlip() {
+    setPrintFailed(false);
+    setShowLocalSlip(true);
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch {
+        setPrintFailed(true);
+      } finally {
+        setShowLocalSlip(false);
+      }
+    }, 100);
+  }
+
+  async function handleConfirmPayment(payload: POSCheckoutPaymentPayload) {
+    const isCash = "payment_method" in payload && payload.payment_method === "CASH";
+    if (training.active) {
+      completeTrainingSale(payload);
+      return;
+    }
+    if (!online) {
+      setErrorMessage(null);
+      if (!isCash) {
+        setErrorMessage("Card, payment links and other payments need internet. Take this sale as cash.");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        await captureCashSaleOffline(payload, idempotencyKey);
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    const body = buildSaleBody(payload, idempotencyKey, true);
     // Freeze this exact payload + key as "in flight" BEFORE sending. If the
     // response never comes back (timeout, reload, tab close) this is what
     // lets a later reload recover safely — resending the SAME payload under
@@ -495,12 +766,21 @@ export default function Pos() {
     } catch (err) {
       const apiErr = err as ApiFetchError;
       if (apiErr?.noResponse) {
+        // A CASH sale that got no HTTP response is captured to the durable
+        // offline queue under the SAME idempotency key it was just sent with:
+        // if the server did receive it, the replay returns the original order
+        // instead of a duplicate. Only if that capture is impossible do we
+        // fall back to the blocking "outcome unknown" recovery card.
+        if (isCash && offline.available && (await captureCashSaleOffline(payload, idempotencyKey))) {
+          return;
+        }
         // Outcome unknown — do NOT clear the in-flight state (it's already
         // persisted). Close the payment dialog and let the blocking recovery
         // card (rendered below, driven by submissionState) take over instead
         // of showing a normal "failed" error — we do not yet know that.
         setPaymentOpen(false);
       } else {
+        if (apiErr?.code === "EVENT_TRADING_NOT_ALLOWED") eventAccess.refresh();
         // A real HTTP response came back rejecting the order (validation,
         // till closed, etc.) — the backend's idempotency check runs before
         // any of that, so no order exists under this key. Safe to go back to
@@ -513,7 +793,7 @@ export default function Pos() {
         setErrorMessage(
           isPosNotEnabledError(apiErr)
             ? "POS is not available for this restaurant"
-            : apiErr?.message ?? "Could not complete the sale — try again"
+            : friendlyPosError(apiErr, "Could not complete the sale — try again")
         );
       }
     } finally {
@@ -584,6 +864,13 @@ export default function Pos() {
   const cartCount = cart.reduce((sum, l) => sum + l.quantity, 0);
   const isLoading = loadingCategories || loadingItems;
 
+  const checkoutBlockedReason =
+    !training.active && !eventAccess.canTrade
+      ? eventAccess.level === "CONFIGURE"
+        ? "Set-up mode: selling opens when your paid event day starts. You can practise in Training mode."
+        : "Your event access has ended: selling is switched off. You can practise in Training mode."
+      : null;
+
   const cartPanel = (
     <CartPanel
       lines={cart}
@@ -607,6 +894,19 @@ export default function Pos() {
       tillOpen={tillOpen}
       errorMessage={null}
       onCheckout={() => setPaymentOpen(true)}
+      checkoutBlockedReason={checkoutBlockedReason}
+      // Souk event vendors have no WhatsApp number of their own (by design,
+      // KNOWN_BUGS BUG-0210), so the ready message could never be sent: the
+      // opt-in is hidden rather than promising the customer a message. The
+      // /board collection screen is their "order ready" path.
+      readyNotify={eventAccess.isEventVendor ? undefined : {
+        phone: notifyPhone,
+        onPhoneChange: setNotifyPhone,
+        consent: notifyConsent,
+        onConsentChange: setNotifyConsent,
+        trainingMode: training.active,
+        online,
+      }}
     />
   );
 
@@ -687,10 +987,14 @@ export default function Pos() {
               )}
             </div>
           </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+          <ConnectivityBadge />
           <button
             onClick={() => setCashupOpen(true)}
+            disabled={!online || training.active}
+            title={!online ? "Needs internet" : training.active ? "Not available in training" : undefined}
             className={cn(
-              "flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold",
+              "flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold disabled:opacity-50",
               tillOpen
                 ? "bg-secondary text-foreground active:bg-muted"
                 : "bg-primary text-primary-foreground shadow-sm active:opacity-90"
@@ -706,6 +1010,7 @@ export default function Pos() {
                 down. The accessible name is unchanged at every size. */}
             <span className="hidden sm:inline">{tillOpen ? "Cash-up" : "Open till"}</span>
           </button>
+          </div>
         </div>
 
         <div className="px-4 pb-3">
@@ -717,6 +1022,8 @@ export default function Pos() {
             {...searchTouch.fieldProps}
           />
         </div>
+
+        <ScanField onScan={(c) => void handleScan(c)} busy={scanBusy} message={scanMessage} disabled={!tillOpen} />
 
         {categories.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-4 pb-3">
@@ -744,6 +1051,33 @@ export default function Pos() {
           </div>
         )}
       </header>
+
+      {training.active && <TrainingBanner sales={training.sales.length} onExit={() => training.setActive(false)} />}
+      <EventAccessBanner access={eventAccess} />
+      <OfflineWarnings />
+      {exchange && (
+        <div
+          role="status"
+          data-testid="exchange-banner"
+          className="flex items-center justify-between gap-3 border-b border-border bg-primary/10 px-4 py-2 text-sm text-foreground"
+        >
+          <span className="font-semibold">
+            Exchange for order {exchange.number ? `#${exchange.number}` : "(refunded)"}
+          </span>
+          <button type="button" onClick={clearExchange} className="text-xs font-medium underline-offset-2 hover:underline">
+            Not an exchange
+          </button>
+        </div>
+      )}
+      {!online && !training.active && (
+        <div role="status" data-testid="offline-banner" className="border-b border-warning/40 bg-warning/15 px-4 py-2">
+          <p className="text-sm font-semibold text-foreground">Offline - cash sales are saved on this device</p>
+          <p className="text-xs text-muted-foreground">
+            They upload automatically when you are back online. Card, payment links, WhatsApp receipts, delivery
+            and loyalty need internet.
+          </p>
+        </div>
+      )}
 
       {/* Told inline, not silently — a cashier who reopens the till after a
           reload/relogin needs to know this cart isn't the one they left with
@@ -861,7 +1195,8 @@ export default function Pos() {
                 </p>
                 <button
                   onClick={() => setCashupOpen(true)}
-                  className="mt-3 h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground active:opacity-90 sm:w-auto"
+                  disabled={!online}
+                  className="mt-3 h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground active:opacity-90 disabled:opacity-50 sm:w-auto"
                 >
                   Open till
                 </button>
@@ -985,6 +1320,24 @@ export default function Pos() {
         </div>
       )}
 
+      {/* A sale that is not (yet) on the server: queued offline, or training. */}
+      {localSale && (
+        <LocalSaleOverlay
+          sale={localSale}
+          printFailed={printFailed}
+          onPrint={handlePrintLocalSlip}
+          onNewSale={() => {
+            setPrintFailed(false);
+            setLocalSale(null);
+          }}
+        />
+      )}
+      {showLocalSlip && localSale && (
+        <div className="fixed top-0 left-0 z-[9999]">
+          <LocalSlip sale={localSale} />
+        </div>
+      )}
+
       {/* Success overlay after a completed sale */}
       {lastOrder && (
         <div
@@ -998,7 +1351,10 @@ export default function Pos() {
             <div className="flex flex-col items-center gap-2 text-center">
               <PartyPopper className="h-10 w-10 text-primary" />
               <h2 className="text-lg font-bold text-foreground">Sale complete</h2>
-              <p className="text-sm text-muted-foreground">Order {lastOrder.order_number}</p>
+              <p className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Order number</p>
+              <p data-testid="sale-order-number" className="text-5xl font-black leading-none text-foreground">
+                {lastOrder.order_number}
+              </p>
               <p className="text-2xl font-bold text-foreground">{formatCurrency(lastOrder.total_cents)}</p>
               {lastOrder.payment_method === "CASH" && lastOrder.change_due_cents != null && (
                 <p className="text-sm text-muted-foreground">
@@ -1176,7 +1532,23 @@ export default function Pos() {
 
       <CashupDialog open={cashupOpen} onClose={() => setCashupOpen(false)} />
 
-      <ItemOptionsDialog item={optionsItem} onClose={() => setOptionsItem(null)} onAdd={handleAddFromDialog} />
+      <ItemOptionsDialog
+        item={optionsItem}
+        onClose={() => {
+          setOptionsItem(null);
+          setPendingVariant(null);
+        }}
+        onAdd={handleAddFromDialog}
+      />
+      <VariantPicker
+        item={variantItem}
+        variants={variantList}
+        onSelect={handlePickVariant}
+        onClose={() => {
+          setVariantItem(null);
+          setVariantList(null);
+        }}
+      />
 
       <PaymentDialog
         open={paymentOpen}
@@ -1191,6 +1563,7 @@ export default function Pos() {
         }
         customerPhone={customerPhone}
         resumePaymentIntent={resumeIntent}
+        restriction={training.active ? "training" : !online ? "offline" : null}
       />
 
       {lastOrder && (

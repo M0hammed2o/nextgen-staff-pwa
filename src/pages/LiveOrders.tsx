@@ -4,7 +4,10 @@ import { apiClient, createSSEConnection } from "@/lib/api";
 import type { Order, PaginatedResponse } from "@/types";
 import OrderCard from "@/components/OrderCard";
 import EmptyState from "@/components/EmptyState";
-import { ShoppingBag } from "lucide-react";
+import DeliveryQueue, { DELIVERY_QUEUE_KEY } from "@/components/DeliveryQueue";
+import QuickOrderAction from "@/components/QuickOrderAction";
+import { Link } from "react-router-dom";
+import { ShoppingBag, Tv } from "lucide-react";
 import { subscribeToPush } from "@/lib/push-notifications";
 
 function playNewOrderAlert(): void {
@@ -73,6 +76,8 @@ export default function LiveOrders() {
       "/v1/business/orders/live/stream",
       () => {
         queryClient.invalidateQueries({ queryKey: ["live-orders"] });
+        // Delivery-platform alerts arrive on the same stream.
+        queryClient.invalidateQueries({ queryKey: DELIVERY_QUEUE_KEY });
       },
       () => {
         // All retries exhausted — polling (refetchInterval: 15s) takes over.
@@ -127,6 +132,15 @@ export default function LiveOrders() {
               {orders.length} active order{orders.length !== 1 ? "s" : ""}
             </p>
           </div>
+          <div className="flex items-center gap-2">
+          <Link
+            to="/board"
+            aria-label="Open collection board"
+            title="Collection board (customer screen)"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-foreground transition-colors active:bg-muted"
+          >
+            <Tv className="h-[18px] w-[18px]" />
+          </Link>
           <button
             onClick={handleRefresh}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-foreground transition-colors active:bg-muted"
@@ -138,10 +152,12 @@ export default function LiveOrders() {
               <path d="M16 16h5v5" />
             </svg>
           </button>
+          </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-lg px-4 py-4">
+        <DeliveryQueue onArrival={playNewOrderAlert} />
         {orders.length === 0 ? (
           <EmptyState
             icon={ShoppingBag}
@@ -152,7 +168,10 @@ export default function LiveOrders() {
         ) : (
           <div className="space-y-3">
             {orders.map((order) => (
-              <OrderCard key={order.id} order={order} />
+              <div key={order.id}>
+                <OrderCard order={order} />
+                <QuickOrderAction order={order} />
+              </div>
             ))}
           </div>
         )}

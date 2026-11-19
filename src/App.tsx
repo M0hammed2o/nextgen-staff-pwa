@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
+import { OfflineProvider } from "@/lib/offline/offline-context";
 import { BrandProvider } from "@/lib/brand-provider";
 import { BrandSync } from "@/components/BrandSync";
 import { TouchKeyboardProvider } from "@/lib/touch-keyboard";
@@ -12,6 +13,7 @@ import { Toaster } from "@/components/ui/toaster";
 import Login from "@/pages/Login";
 import Welcome from "@/pages/Welcome";
 import LiveOrders from "@/pages/LiveOrders";
+import CollectionBoard from "@/pages/CollectionBoard";
 import Pos from "@/pages/Pos";
 import OrderDetail from "@/pages/OrderDetail";
 import CompletedOrders from "@/pages/CompletedOrders";
@@ -33,6 +35,7 @@ const App = () => (
   <ErrorBoundary>
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+    <OfflineProvider>
       {/* BrandProvider sits INSIDE AuthProvider (it reads the saved business)
           but OUTSIDE the router, so the restaurant's colours are already on
           <html> before the first route renders -- including /login, which is
@@ -56,6 +59,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <LiveOrders />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/board"
+            element={
+              <ProtectedRoute>
+                <CollectionBoard />
               </ProtectedRoute>
             }
           />
@@ -119,6 +130,7 @@ const App = () => (
       </TouchKeyboardProvider>
       </BrowserRouter>
       </BrandProvider>
+    </OfflineProvider>
     </AuthProvider>
   </QueryClientProvider>
   </ErrorBoundary>

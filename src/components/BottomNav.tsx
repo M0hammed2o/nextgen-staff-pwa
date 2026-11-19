@@ -132,7 +132,7 @@ export default function BottomNav() {
   // two occupy the same screen real estate, and there is nothing useful to
   // tap in the nav bar while a field is being typed into).
   const isHidden =
-    location.pathname === "/login" || location.pathname.startsWith("/orders/") || touchKeyboardActive;
+    location.pathname === "/login" || location.pathname === "/board" || location.pathname.startsWith("/orders/") || touchKeyboardActive;
 
   // Publish this bar's REAL rendered height as --bottom-nav-height so page
   // layouts (Pos.tsx etc.) can reserve exactly enough space above this

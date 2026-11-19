@@ -127,6 +127,13 @@ interface Props {
    * ahead of the normal send-a-new-link form.
    */
   resumePaymentIntent?: PaymentIntent | null;
+  /**
+   * "offline": no connection, so only a cash sale can be captured (it is
+   * queued and uploaded later). "training": nothing leaves the device. In both
+   * cases card/other/split/payment-link are shown DISABLED and labelled, never
+   * hidden and never pretend-working.
+   */
+  restriction?: "offline" | "training" | null;
 }
 
 type Step =
@@ -143,8 +150,9 @@ type Step =
 
 export default function PaymentDialog({
   open, onClose, totalCents, posSettings, onConfirm, isSubmitting, errorMessage, loyaltyRewardPreview = null,
-  customerPhone = null, resumePaymentIntent = null,
+  customerPhone = null, resumePaymentIntent = null, restriction = null,
 }: Props) {
+  const restrictedLabel = restriction === "training" ? "not available in training" : "needs internet";
   const [step, setStep] = useState<Step>("method");
   const [cashInput, setCashInput] = useState("");
   const [reference, setReference] = useState("");
@@ -233,7 +241,7 @@ export default function PaymentDialog({
   const enabledMethodCount = [
     posSettings?.cash_enabled, posSettings?.card_enabled, posSettings?.other_payment_enabled, posSettings?.pay_by_link_enabled,
   ].filter(Boolean).length;
-  const splitAvailable = enabledMethodCount >= 2;
+  const splitAvailable = enabledMethodCount >= 2 && !restriction;
 
   // Poll every ~2.5s for any PAY_BY_LINK allocation still PENDING, for as
   // long as the dialog is open — independent of which split sub-step is
@@ -580,7 +588,17 @@ export default function PaymentDialog({
                 💵 Cash
               </button>
             )}
-            {posSettings?.card_enabled && (
+            {posSettings?.card_enabled && restriction && (
+              <button
+                type="button"
+                disabled
+                className="flex h-20 w-full flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card text-base font-semibold text-foreground opacity-50"
+              >
+                💳 Card
+                <span className="text-xs font-normal">{restrictedLabel}</span>
+              </button>
+            )}
+            {posSettings?.card_enabled && !restriction && (
               <button
                 type="button"
                 onClick={() => setStep("card")}
@@ -589,7 +607,17 @@ export default function PaymentDialog({
                 💳 Card
               </button>
             )}
-            {posSettings?.other_payment_enabled && (
+            {posSettings?.other_payment_enabled && restriction && (
+              <button
+                type="button"
+                disabled
+                className="flex h-20 w-full flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card text-base font-semibold text-foreground opacity-50"
+              >
+                Other
+                <span className="text-xs font-normal">{restrictedLabel}</span>
+              </button>
+            )}
+            {posSettings?.other_payment_enabled && !restriction && (
               <button
                 type="button"
                 onClick={() => setStep("other")}
@@ -601,6 +629,11 @@ export default function PaymentDialog({
             {posSettings && !posSettings.cash_enabled && !posSettings.card_enabled && !posSettings.other_payment_enabled && (
               <p className="text-sm text-destructive">
                 No payment methods are enabled for this business — ask a manager to check Settings.
+              </p>
+            )}
+            {restriction && enabledMethodCount >= 2 && (
+              <p className="text-center text-xs text-muted-foreground">
+                Split payment and payment links: {restrictedLabel}.
               </p>
             )}
             {splitAvailable && (

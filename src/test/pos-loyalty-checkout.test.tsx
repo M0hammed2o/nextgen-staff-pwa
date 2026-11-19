@@ -162,6 +162,7 @@ function installApiMock(opts: { onPost?: typeof postMock.mockImplementation } = 
     if (path.startsWith("/v1/business/receipts/orders/")) {
       return Promise.reject({ message: "not needed for these tests", status: 0, noResponse: true });
     }
+    if (String(path).endsWith("/variants")) return Promise.resolve([]); // plain item: no variants
     return Promise.reject(new Error(`Unmocked GET ${path}`));
   });
 }
@@ -282,6 +283,7 @@ describe("Pos + loyalty — reward worth more than the cart total", () => {
       if (path === "/v1/business/pos/settings") return Promise.resolve(POS_SETTINGS);
       if (path.startsWith("/v1/business/loyalty/customers/lookup")) return Promise.resolve(CUSTOMER);
       if (path === "/v1/business/loyalty/rewards") return Promise.resolve([bigReward]);
+      if (String(path).endsWith("/variants")) return Promise.resolve([]); // plain item: no variants
       return Promise.reject(new Error(`Unmocked GET ${path}`));
     });
 

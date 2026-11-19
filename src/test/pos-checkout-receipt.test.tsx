@@ -131,6 +131,7 @@ function installApiMock() {
       // under test.
       return Promise.reject({ message: "Could not reach the server", status: 0, noResponse: true });
     }
+    if (String(path).endsWith("/variants")) return Promise.resolve([]); // plain item: no variants
     return Promise.reject(new Error(`Unmocked GET ${path}`));
   });
   postMock.mockImplementation((path: string) => {
@@ -235,6 +236,6 @@ describe("Pos checkout → receipt print", () => {
   it("the sale stays marked complete (order number + total shown) even though the receipt never printed", async () => {
     await ringUpAndPay();
     await screen.findByText("Receipt did not print");
-    expect(screen.getByText(/Order A-0001/)).toBeInTheDocument();
+    expect(screen.getByTestId("sale-order-number")).toHaveTextContent("A-0001");
   });
 });

@@ -3,6 +3,8 @@ import type { CartLine, LoyaltyRewardResponse, POSSettings } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useTouchField } from "@/hooks/useTouchField";
+import ReadyNotifyOptIn, { type ReadyNotifyState } from "./ReadyNotifyOptIn";
+import { notifyProblem } from "@/lib/ready-notify";
 import LoyaltyBalance from "./LoyaltyBalance";
 import LoyaltyRewardPicker, { previewLoyaltyDiscountCents } from "./LoyaltyRewardPicker";
 
@@ -43,6 +45,13 @@ interface Props {
   tillOpen: boolean;
   errorMessage: string | null;
   onCheckout: () => void;
+  /**
+   * When set, Checkout is disabled and this is shown as the reason (event
+   * vendor outside a paid trading day). Training mode never sets it.
+   */
+  checkoutBlockedReason?: string | null;
+  /** Optional "notify when ready (WhatsApp)" opt-in; omitted = not offered. */
+  readyNotify?: ReadyNotifyState;
 }
 
 export default function CartPanel({
@@ -55,7 +64,7 @@ export default function CartPanel({
   discountRand, onDiscountRandChange,
   discountReason, onDiscountReasonChange,
   loyaltyReward, onLoyaltyRewardChange,
-  tillOpen, errorMessage, onCheckout,
+  tillOpen, errorMessage, onCheckout, checkoutBlockedReason = null, readyNotify,
 }: Props) {
   const subtotalCents = lines.reduce((sum, l) => sum + lineTotalCents(l), 0);
   const discountCents = Math.round((parseFloat(discountRand || "0") || 0) * 100);
@@ -86,7 +95,12 @@ export default function CartPanel({
     : 0;
 
   const tableNumberRequired = orderMode === "DINE_IN" && !!posSettings?.table_number_required;
-  const canCheckout = lines.length > 0 && tillOpen && (!tableNumberRequired || tableNumber.trim().length > 0);
+  // A ticked consent box with no usable number must be fixed (or unticked)
+  // before checkout, so an unusable number is never silently dropped.
+  const notifyBlocked =
+    !!readyNotify &&
+    !!notifyProblem({ notifyPhone: readyNotify.phone, consent: readyNotify.consent, available: readyNotify.online && !readyNotify.trainingMode });
+  const canCheckout = lines.length > 0 && tillOpen && !checkoutBlockedReason && !notifyBlocked && (!tableNumberRequired || tableNumber.trim().length > 0);
 
   const tableNumberTouch = useTouchField({ value: tableNumber, onChange: onTableNumberChange, layout: "QWERTY", maxLength: 20 });
   const customerNameTouch = useTouchField({ value: customerName, onChange: onCustomerNameChange, layout: "QWERTY", maxLength: 100 });
@@ -117,6 +131,11 @@ export default function CartPanel({
                       {formatCurrency(lineTotalCents(line))}
                     </p>
                   </div>
+                  {line.variantLabel && (
+                    <p className="text-xs font-medium text-muted-foreground" data-testid="cart-variant-label">
+                      {line.variantLabel}
+                    </p>
+                  )}
                   {line.selectedOptionsDisplay.map((o) => (
                     <p key={o.groupName} className="text-xs text-muted-foreground">{o.optionName}</p>
                   ))}
@@ -232,6 +251,8 @@ export default function CartPanel({
               />
             </div>
 
+            {readyNotify && <ReadyNotifyOptIn {...readyNotify} />}
+
             {/* Discount (optional) */}
             <div className="space-y-2">
               <span className="text-xs font-medium text-muted-foreground">Discount (optional)</span>
@@ -311,6 +332,11 @@ export default function CartPanel({
           {!tillOpen && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
               Open the till (top-right) before taking payment.
+            </p>
+          )}
+          {checkoutBlockedReason && (
+            <p data-testid="checkout-blocked-reason" className="rounded-md bg-warning/15 px-3 py-2 text-xs text-foreground">
+              {checkoutBlockedReason}
             </p>
           )}
           {errorMessage && (

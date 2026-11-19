@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import type { Order } from "@/types";
 import { cn, formatCurrency, formatTime, timeAgo, getStatusColor } from "@/lib/utils";
+import { marketplaceLabel } from "@/lib/delivery";
 
 interface OrderCardProps {
   order: Order;
@@ -57,7 +58,13 @@ export default function OrderCard({ order }: OrderCardProps) {
           {itemPreview}
           {hasMore && ` +${(order.items?.length ?? 0) - 3} more`}
         </p>
-        {order.order_mode && (
+        {marketplaceLabel(order.source) ? (
+          // Marketplace order: the courier collects it, so the platform is
+          // what the kitchen needs to see.
+          <span className="ml-2 shrink-0 rounded-md bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
+            {marketplaceLabel(order.source)}
+          </span>
+        ) : order.order_mode && (
           <span className="ml-2 shrink-0 rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
             {order.order_mode}
           </span>

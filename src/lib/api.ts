@@ -75,6 +75,15 @@ async function refreshAccessToken(): Promise<boolean> {
 export interface ApiFetchOptions extends RequestInit {
   /** Per-call override. Pass `null` to disable the timeout entirely (SSE never uses apiFetch, so this is only for the rare long-running request). */
   timeoutMs?: number | null;
+  /**
+   * Background callers (the offline sync engine) must NOT hijack the screen:
+   * when the session cannot be refreshed, throw `{status: 401}` instead of
+   * clearing tokens and redirecting to /login. The caller keeps its work
+   * queued and waits for the user to sign in again.
+   */
+  noAuthRedirect?: boolean;
+  /** Called with every HTTP response (ok or not) before it is parsed; used to read the server's Date header. */
+  onResponse?: (res: Response) => void;
 }
 
 /**
@@ -115,7 +124,7 @@ export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {}
 ): Promise<T> {
-  const { timeoutMs, ...requestInit } = options;
+  const { timeoutMs, noAuthRedirect, onResponse, ...requestInit } = options;
   const tokens = getStoredTokens();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -143,12 +152,16 @@ export async function apiFetch<T>(
         headers["Authorization"] = `Bearer ${newTokens.access_token}`;
       }
       res = await timedFetch(`${BASE_URL}${path}`, { ...requestInit, headers }, timeoutMs);
+    } else if (noAuthRedirect) {
+      throw { message: "Session expired", status: 401 } as ApiFetchError;
     } else {
       clearTokens();
       window.location.href = "/login";
       throw new Error("Session expired");
     }
   }
+
+  onResponse?.(res);
 
   if (!res.ok) {
     let message = "Request failed";
