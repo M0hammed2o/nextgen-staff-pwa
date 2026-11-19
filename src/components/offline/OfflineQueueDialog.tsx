@@ -11,6 +11,7 @@ const STATUS_LABEL: Record<QueueEntry["status"], string> = {
   pending: "Waiting to upload",
   syncing: "Uploading…",
   synced: "Uploaded",
+  review: "Sent to manager for review",
   conflict: "Needs attention",
   failed: "Needs attention",
 };
@@ -24,6 +25,7 @@ export default function OfflineQueueDialog({ open, onClose }: { open: boolean; o
   const [actionError, setActionError] = useState<string | null>(null);
 
   const visible = entries.filter((e) => e.status !== "synced");
+  const inReview = visible.filter((e) => e.status === "review").length;
   const recentlySynced = entries.filter((e) => e.status === "synced").slice(-5).reverse();
 
   async function run(fn: () => Promise<void>) {
@@ -52,6 +54,12 @@ export default function OfflineQueueDialog({ open, onClose }: { open: boolean; o
         {authRequired && counts.pending + counts.attention > 0 && (
           <p role="alert" className="rounded-md bg-warning/10 px-3 py-2 text-sm text-foreground">
             Sign in again to upload the waiting sales. They are safe on this device.
+          </p>
+        )}
+        {inReview > 0 && (
+          <p role="status" data-testid="queue-review-note" className="rounded-md bg-primary/10 px-3 py-2 text-sm text-foreground">
+            {inReview} late sale{inReview === 1 ? " was" : "s were"} sent to a manager for review. Nothing more is needed on
+            this device; a manager approves or rejects {inReview === 1 ? "it" : "them"} in the Manager Dashboard.
           </p>
         )}
         {actionError && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{actionError}</p>}

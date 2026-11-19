@@ -319,6 +319,9 @@ export interface POSOrderCreateRequest {
   offline_captured_at?: string;
   captured_by_user_id?: string;
   offline_client_total_cents?: number;
+  // BUG-0208: opt in to the server's late-upload review queue. Set by the sync
+  // engine on every queued sale it uploads (never on an online sale).
+  offline_review_if_too_old?: boolean;
 }
 
 // A single tender line within a split-payment checkout. `PAY_BY_LINK` is

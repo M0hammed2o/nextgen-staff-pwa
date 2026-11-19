@@ -51,6 +51,15 @@ export const PERMANENT_SALE_CODES: Record<string, string> = {
     "This device's clock was ahead when the sale was taken, so the server refused it. Fix the date and time on this device; a manager may need to enter the sale by hand.",
   OFFLINE_CAPTURE_NO_TIMEZONE:
     "This sale was saved without a time zone and the server refused it. A manager must enter it by hand.",
+  // BUG-0208 post-event sync grace. EVENT_SYNC_ONLY on an upload means the queued
+  // sale carries no offline capture time (an entry saved by an older app), so the
+  // server cannot treat it as an offline sale once the event is over.
+  EVENT_SYNC_ONLY:
+    "The event has ended and only offline sales can still be uploaded. This sale has no offline capture time, so a manager must enter it by hand.",
+  OFFLINE_CAPTURE_REVIEW_REJECTED:
+    "A manager reviewed this late sale and rejected it. It will not be recorded. Discard it here.",
+  OFFLINE_CAPTURE_REVIEW_DECIDED:
+    "A manager already decided this late sale. It will not be uploaded again. Discard it here.",
   USER_NOT_FOUND:
     "The cashier who took this sale is no longer an active user of this business. A manager must enter the sale by hand.",
   // EVENT_TRADING_NOT_ALLOWED is deliberately absent: it is a 403 (parked below) and the
@@ -85,6 +94,16 @@ export function classifyError(err: unknown): Outcome {
 export interface SyncedOrder {
   id?: string;
   order_number?: string;
+  /** 202 body: "OFFLINE_CAPTURE_PENDING_REVIEW" with the server's review id. */
+  code?: string;
+  review_id?: string;
+}
+
+/** The server queued the sale for a manager instead of creating the order (HTTP 202). */
+export const PENDING_REVIEW_CODE = "OFFLINE_CAPTURE_PENDING_REVIEW";
+
+export function isPendingReview(res: SyncedOrder | null | undefined): res is SyncedOrder & { review_id: string } {
+  return !!res && res.code === PENDING_REVIEW_CODE && typeof res.review_id === "string" && res.review_id.length > 0;
 }
 
 export interface SyncEngineOptions {
@@ -168,6 +187,12 @@ export class SyncEngine {
 
         try {
           const order = await this.opts.send(entry, payload);
+          if (isPendingReview(order)) {
+            // Accepted for manager review: final here, not an error, never retried.
+            await queue.markReview(entry.id, order.review_id);
+            this.authRequired = false;
+            continue;
+          }
           // A dedupe response (the server already had this key) is a 2xx: success.
           const done = await queue.markSynced(entry.id, order ?? {});
           this.authRequired = false;
