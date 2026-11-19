@@ -68,3 +68,40 @@ describe("apiFetch request timeouts", () => {
     expect(sawSignal == null).toBe(true);
   });
 });
+
+describe("apiFetch error bodies (Souk e2e 8d)", () => {
+  afterEach(() => {
+    restoreFetch();
+    localStorage.clear();
+  });
+
+  async function rejectionFor(body: unknown, status = 403): Promise<{ message: unknown; code?: string; status: number }> {
+    global.fetch = (async () =>
+      new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })) as unknown as typeof fetch;
+    try {
+      await apiFetch("/v1/business/pos/orders", { method: "POST", timeoutMs: 1000 });
+    } catch (err) {
+      return err as { message: unknown; code?: string; status: number };
+    }
+    throw new Error("expected a rejection");
+  }
+
+  it("FastAPI HTTPException with an object detail gives a string message AND the code (was: the object itself)", async () => {
+    const err = await rejectionFor({
+      detail: { code: "BUSINESS_SUSPENDED", message: "This business account has been suspended.", details: null },
+    });
+    expect(err).toMatchObject({ status: 403, code: "BUSINESS_SUSPENDED", message: "This business account has been suspended." });
+    expect(typeof err.message).toBe("string");
+  });
+
+  it("the app's own { error: { code, message } } shape is unchanged", async () => {
+    const err = await rejectionFor({ error: { code: "EVENT_TRADING_NOT_ALLOWED", message: "Trading is not allowed." } });
+    expect(err).toMatchObject({ code: "EVENT_TRADING_NOT_ALLOWED", message: "Trading is not allowed." });
+  });
+
+  it("a validation list or an object without a message falls back to a string", async () => {
+    expect((await rejectionFor({ detail: [{ msg: "field required" }] }, 422)).message).toBe("field required");
+    const odd = await rejectionFor({ detail: { code: "X" } });
+    expect(odd).toMatchObject({ code: "X", message: "Request failed" });
+  });
+});

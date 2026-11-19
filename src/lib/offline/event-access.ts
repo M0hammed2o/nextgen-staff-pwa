@@ -37,6 +37,13 @@ export interface EventAccessResponse {
   ready_notify_available?: boolean;
   sync_only?: boolean;
   sync_only_until?: string | null;
+  /**
+   * Client-side only (never sent by the server): set when the server answered
+   * this call with 403 BUSINESS_SUSPENDED, e.g. after the organiser cancelled
+   * the event and the reconcile job suspended the vendor. The till then shows
+   * "no longer trading" instead of a stale last-known TRADE.
+   */
+  business_suspended?: boolean;
 }
 
 export interface EventAccessState {
@@ -57,6 +64,8 @@ export interface EventAccessState {
   syncOnly: boolean;
   /** ISO instant the upload-only window ends, when syncOnly. */
   syncOnlyUntil: string | null;
+  /** The server refused this business with BUSINESS_SUSPENDED: no selling at all. */
+  suspended: boolean;
 }
 
 const NOT_EVENT: EventAccessResponse = { is_event_vendor: false, access_level: null, reason: null };
@@ -92,22 +101,42 @@ export async function fetchEventAccess(businessId: string): Promise<{ data: Even
       return { data: NOT_EVENT, stale: false };
     }
     const cached = readCache(businessId);
+    if (e?.status === 403 && e.code === "BUSINESS_SUSPENDED") {
+      // A definite server answer (not a network failure): remember it, so an
+      // offline reload does not fall back to an older TRADE and queue sales
+      // the server will refuse. The next successful call replaces it.
+      const base = cached && !cached.business_suspended ? cached : NOT_EVENT;
+      const data: EventAccessResponse = {
+        ...base,
+        access_level: base.is_event_vendor ? "NONE" : null,
+        reason: "BUSINESS_SUSPENDED",
+        ready_notify_available: false,
+        sync_only: false,
+        sync_only_until: null,
+        business_suspended: true,
+      };
+      writeCache(businessId, data);
+      return { data, stale: false };
+    }
     if (cached) return { data: cached, stale: true };
     return { data: NOT_EVENT, stale: true };
   }
 }
 
 export function toState(data: EventAccessResponse, stale: boolean): EventAccessState {
-  const level = data.is_event_vendor ? (data.access_level ?? "NONE") : null;
+  const suspended = data.business_suspended === true;
+  const level = data.is_event_vendor ? (suspended ? "NONE" : data.access_level ?? "NONE") : null;
+  const syncOnly = !suspended && data.is_event_vendor && data.sync_only === true;
   return {
     isEventVendor: data.is_event_vendor,
     level,
     reason: data.reason,
     stale,
-    canTrade: !data.is_event_vendor || level === "TRADE",
-    readyNotifyAvailable: !data.is_event_vendor || data.ready_notify_available === true,
-    syncOnly: data.is_event_vendor && data.sync_only === true,
-    syncOnlyUntil: data.is_event_vendor && data.sync_only === true ? data.sync_only_until ?? null : null,
+    canTrade: !suspended && (!data.is_event_vendor || level === "TRADE"),
+    readyNotifyAvailable: !suspended && (!data.is_event_vendor || data.ready_notify_available === true),
+    syncOnly,
+    syncOnlyUntil: syncOnly ? data.sync_only_until ?? null : null,
+    suspended,
   };
 }
 

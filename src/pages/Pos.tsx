@@ -32,7 +32,7 @@ import { useTrainingMode } from "@/lib/offline/training";
 import { useEventAccess } from "@/lib/offline/event-access";
 import type { SnapshotLine } from "@/lib/offline/types";
 import ConnectivityBadge from "@/components/offline/ConnectivityBadge";
-import { TrainingBanner, EventAccessBanner, OfflineWarnings } from "@/components/offline/TillBanners";
+import { TrainingBanner, EventAccessBanner, OfflineWarnings, describeEventAccess } from "@/components/offline/TillBanners";
 import LocalSaleOverlay, { LocalSlip, type LocalSaleView } from "@/components/offline/LocalSaleOverlay";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
@@ -782,7 +782,10 @@ export default function Pos() {
         // of showing a normal "failed" error — we do not yet know that.
         setPaymentOpen(false);
       } else {
-        if (apiErr?.code === "EVENT_TRADING_NOT_ALLOWED") eventAccess.refresh();
+        // The server says this stall may not sell (event gate, or the whole
+        // business suspended, e.g. after the event was cancelled): re-check
+        // access so the till switches to its "not trading" state.
+        if (apiErr?.code === "EVENT_TRADING_NOT_ALLOWED" || apiErr?.code === "BUSINESS_SUSPENDED") eventAccess.refresh();
         // A real HTTP response came back rejecting the order (validation,
         // till closed, etc.) — the backend's idempotency check runs before
         // any of that, so no order exists under this key. Safe to go back to
@@ -828,7 +831,7 @@ export default function Pos() {
         setRecoveryError(
           isPosNotEnabledError(apiErr)
             ? "POS is not available for this restaurant"
-            : apiErr?.message ?? "That sale could not be completed. Check the details and try again."
+            : friendlyPosError(apiErr, "That sale could not be completed. Check the details and try again.")
         );
       }
     } finally {
@@ -870,9 +873,7 @@ export default function Pos() {
     !training.active && !eventAccess.canTrade
       ? eventAccess.syncOnly
         ? "The event has ended: new sales are switched off. Offline sales saved on this device still upload."
-        : eventAccess.level === "CONFIGURE"
-        ? "Set-up mode: selling opens when your paid event day starts. You can practise in Training mode."
-        : "Your event access has ended: selling is switched off. You can practise in Training mode."
+        : describeEventAccess(eventAccess)?.checkout ?? "Selling is switched off for this stall."
       : null;
   // BUG-0208: after the event only the upload of queued offline sales is allowed,
   // so the menu (which the server no longer serves) is replaced by that state.

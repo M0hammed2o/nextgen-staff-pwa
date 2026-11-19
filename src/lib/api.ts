@@ -120,6 +120,33 @@ async function timedFetch(url: string, init: RequestInit, timeoutMs: number | nu
   }
 }
 
+/**
+ * Reads `{message, code}` out of any error body the backend sends. Two shapes
+ * exist: the app's own `{ error: { code, message } }` (AppError) and FastAPI's
+ * default `{ detail: ... }` for a raised HTTPException, where `detail` may be
+ * a string OR an object such as `{ code: "BUSINESS_SUSPENDED", message }`
+ * (backend/app/core/rbac.py) OR a list (validation errors). The message is
+ * ALWAYS a string: it used to be the raw `detail` object for the rbac shape,
+ * which React then tried to render as a child and crashed the whole app to
+ * the error boundary (Souk e2e 8d: a sale after the event was cancelled).
+ */
+export function parseErrorBody(body: unknown, fallback: string): { message: string; code?: string } {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const err = (b.error && typeof b.error === "object" ? b.error : null) as Record<string, unknown> | null;
+  const detail = b.detail;
+  const detailObj = (detail && typeof detail === "object" && !Array.isArray(detail) ? detail : null) as Record<string, unknown> | null;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
+  const message =
+    str(err?.message) ??
+    str(detail) ??
+    str(detailObj?.message) ??
+    (Array.isArray(detail) ? str((detail[0] as { msg?: unknown } | undefined)?.msg) : undefined) ??
+    str(b.message) ??
+    fallback;
+  const code = str(err?.code) ?? str(detailObj?.code);
+  return code ? { message, code } : { message };
+}
+
 export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {}
@@ -168,9 +195,9 @@ export async function apiFetch<T>(
     let code: string | undefined;
     try {
       const body = await res.json();
-      // Backend returns { error: { code, message, details } } — parse nested format
-      message = body?.error?.message || body?.detail || body?.message || message;
-      code = typeof body?.error?.code === "string" ? body.error.code : undefined;
+      // Backend returns { error: { code, message, details } } or FastAPI's
+      // { detail } — see parseErrorBody.
+      ({ message, code } = parseErrorBody(body, message));
       console.error(`API ${res.status}:`, body?.error || body);
     } catch (parseError) {
       // Response body is not JSON (e.g. empty 500 from a proxy). Log for Sentry.
@@ -313,7 +340,7 @@ export async function fetchStaffDirectory(
     let message = "Store not found. Check the code and try again.";
     try {
       const body = await res.json();
-      message = body?.error?.message || body?.detail || message;
+      message = parseErrorBody(body, message).message;
     } catch {
       // non-JSON error body — keep the default message
     }
