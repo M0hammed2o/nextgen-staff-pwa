@@ -107,6 +107,7 @@ beforeEach(() => {
     if (path === "/v1/business/pos/till/current") return Promise.resolve(TILL_OPEN);
     if (path === "/v1/business/pos/settings") return Promise.resolve(POS_SETTINGS);
     if (path === "/v1/business/event-access") return Promise.reject({ status: 404, message: "Not found" });
+    if (String(path).endsWith("/variants")) return Promise.resolve([]); // plain item: no variants
     return Promise.reject(new Error(`Unmocked GET ${path}`));
   });
   postMock.mockImplementation((path: string) =>

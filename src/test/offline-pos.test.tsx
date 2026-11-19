@@ -61,6 +61,7 @@ function installApi() {
     if (path === "/v1/business/pos/till/current") return Promise.resolve(TILL_OPEN);
     if (path === "/v1/business/pos/settings") return Promise.resolve(POS_SETTINGS);
     if (path === "/v1/business/event-access") return eventAccessResponse();
+    if (String(path).endsWith("/variants")) return Promise.resolve([]); // plain item: no variants
     return Promise.reject(new Error(`Unmocked GET ${path}`));
   });
   postMock.mockRejectedValue(new Error("unexpected POST"));
@@ -237,6 +238,7 @@ describe("training mode", () => {
       if (path === "/v1/business/pos/settings") return Promise.resolve(POS_SETTINGS);
       if (path === "/v1/business/event-access")
         return Promise.resolve({ is_event_vendor: true, access_level: "CONFIGURE", reason: "PREP_WINDOW", events: [] });
+      if (String(path).endsWith("/variants")) return Promise.resolve([]); // plain item: no variants
       return Promise.reject(new Error(`Unmocked GET ${path}`));
     });
     trainingStore.setActive(true);

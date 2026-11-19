@@ -461,6 +461,7 @@ function installPosApi(opts: {
     if (path === "/v1/business/pos/settings") return Promise.resolve(SETTINGS);
     if (path === UNCONSUMED_PATH) return opts.unconsumed();
     if (path === `${INTENTS_PATH}/paid-1`) return Promise.resolve(paidUnconsumed());
+    if (String(path).endsWith("/variants")) return Promise.resolve([]); // plain item: no variants
     return Promise.reject(new Error(`Unmocked GET ${path}`));
   });
   postMock.mockImplementation((path: string) => {
