@@ -258,19 +258,48 @@ describe("event access banner", () => {
     mockEvent({ is_event_vendor: true, access_level: "CONFIGURE", reason: "PREP_WINDOW", events: [] });
     renderPos(offlineValue(true, new OfflineQueue(new MemoryStore())));
     const banner = await screen.findByTestId("event-access-banner");
-    expect(banner).toHaveTextContent("Set-up mode — trading opens when your paid event day starts");
-    expect(banner).toHaveTextContent("PREP_WINDOW");
+    expect(banner).toHaveTextContent("Set-up mode — the event has not started yet");
+    expect(banner).toHaveTextContent("Selling opens on your first paid event day.");
+    expect(banner).not.toHaveTextContent("PREP_WINDOW"); // never the raw server code
     await addBurger();
     expect(await screen.findByRole("button", { name: /Checkout/ })).toBeDisabled();
     expect(screen.getByTestId("checkout-blocked-reason")).toBeInTheDocument();
   });
 
   it("NONE: explains that access has ended and blocks Checkout", async () => {
-    mockEvent({ is_event_vendor: true, access_level: "NONE", reason: "NO_PAID_COVER_TODAY", events: [] });
+    mockEvent({ is_event_vendor: true, access_level: "NONE", reason: null, events: [] });
     renderPos(offlineValue(true, new OfflineQueue(new MemoryStore())));
     expect(await screen.findByTestId("event-access-banner")).toHaveTextContent(/event access has ended/i);
     await addBurger();
     expect(await screen.findByRole("button", { name: /Checkout/ })).toBeDisabled();
+  });
+
+  // Souk e2e 8b: after a vendor's paid days are over while the event is still
+  // running, the server answers CONFIGURE + NO_PAID_COVER_TODAY. The till used
+  // to say "Set-up mode — trading opens when your paid event day starts".
+  it("CONFIGURE + NO_PAID_COVER_TODAY: says no paid day covers today, not set-up mode", async () => {
+    mockEvent({ is_event_vendor: true, access_level: "CONFIGURE", reason: "NO_PAID_COVER_TODAY", events: [] });
+    renderPos(offlineValue(true, new OfflineQueue(new MemoryStore())));
+    const banner = await screen.findByTestId("event-access-banner");
+    expect(banner).toHaveTextContent("No paid event day today — sales are switched off");
+    expect(banner).not.toHaveTextContent(/Set-up mode/);
+    expect(banner).not.toHaveTextContent("NO_PAID_COVER_TODAY");
+    await addBurger();
+    expect(await screen.findByRole("button", { name: /Checkout/ })).toBeDisabled();
+    expect(screen.getByTestId("checkout-blocked-reason")).toHaveTextContent(/No paid event day covers today/);
+  });
+
+  it("NONE + EVENT_ENDED and CANCELLED say so", async () => {
+    mockEvent({ is_event_vendor: true, access_level: "NONE", reason: "EVENT_ENDED", events: [] });
+    const first = renderPos(offlineValue(true, new OfflineQueue(new MemoryStore())));
+    expect(await screen.findByTestId("event-access-banner")).toHaveTextContent("The event has ended — sales are switched off");
+    first.unmount();
+    mockEvent({ is_event_vendor: true, access_level: "NONE", reason: "CANCELLED", events: [] });
+    renderPos(offlineValue(true, new OfflineQueue(new MemoryStore())));
+    // (the cached EVENT_ENDED shows first, until the fresh answer arrives)
+    await waitFor(() =>
+      expect(screen.getByTestId("event-access-banner")).toHaveTextContent("This event was cancelled — sales are switched off"),
+    );
   });
 
   it("TRADE: no banner, Checkout enabled", async () => {

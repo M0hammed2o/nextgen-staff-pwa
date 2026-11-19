@@ -50,6 +50,8 @@ interface Props {
    * vendor outside a paid trading day). Training mode never sets it.
    */
   checkoutBlockedReason?: string | null;
+  /** A tapped item is still being added (its lookup has not answered): wait. */
+  checkoutPending?: boolean;
   /** Optional "notify when ready (WhatsApp)" opt-in; omitted = not offered. */
   readyNotify?: ReadyNotifyState;
 }
@@ -64,7 +66,7 @@ export default function CartPanel({
   discountRand, onDiscountRandChange,
   discountReason, onDiscountReasonChange,
   loyaltyReward, onLoyaltyRewardChange,
-  tillOpen, errorMessage, onCheckout, checkoutBlockedReason = null, readyNotify,
+  tillOpen, errorMessage, onCheckout, checkoutBlockedReason = null, checkoutPending = false, readyNotify,
 }: Props) {
   const subtotalCents = lines.reduce((sum, l) => sum + lineTotalCents(l), 0);
   const discountCents = Math.round((parseFloat(discountRand || "0") || 0) * 100);
@@ -100,7 +102,7 @@ export default function CartPanel({
   const notifyBlocked =
     !!readyNotify &&
     !!notifyProblem({ notifyPhone: readyNotify.phone, consent: readyNotify.consent, available: readyNotify.online && !readyNotify.trainingMode });
-  const canCheckout = lines.length > 0 && tillOpen && !checkoutBlockedReason && !notifyBlocked && (!tableNumberRequired || tableNumber.trim().length > 0);
+  const canCheckout = lines.length > 0 && tillOpen && !checkoutPending && !checkoutBlockedReason && !notifyBlocked && (!tableNumberRequired || tableNumber.trim().length > 0);
 
   const tableNumberTouch = useTouchField({ value: tableNumber, onChange: onTableNumberChange, layout: "QWERTY", maxLength: 20 });
   const customerNameTouch = useTouchField({ value: customerName, onChange: onCustomerNameChange, layout: "QWERTY", maxLength: 100 });

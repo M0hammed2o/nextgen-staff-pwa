@@ -38,10 +38,115 @@ export function formatDeadline(iso: string | null): string | null {
   return new Date(t).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export function EventAccessBanner({ access }: { access: EventAccessState }) {
+export interface AccessCopy {
+  /** "info" = set-up before trading starts; "stop" = selling is switched off. */
+  tone: "info" | "stop";
+  title: string;
+  detail: string;
+  /** One line under the Checkout button explaining why it is disabled. */
+  checkout: string;
+}
+
+const PRACTISE = " You can practise in Training mode.";
+
+/**
+ * What the till says for a non-trading event vendor, from the server's
+ * `reason` (backend app/events/rules.py evaluate_access). It used to say
+ * "Set-up mode — trading opens when your paid event day starts" for every
+ * CONFIGURE reason and print the raw code underneath, which was wrong once a
+ * vendor's paid days were over while the event was still running
+ * (NO_PAID_COVER_TODAY). Unknown reasons fall back on the access level.
+ * Display only: the server still refuses the sale whatever this says.
+ */
+export function describeEventAccess(access: EventAccessState): AccessCopy | null {
+  if (access.suspended) {
+    return {
+      tone: "stop",
+      title: "This stall is no longer trading",
+      detail:
+        "The account has been suspended (for example the event was cancelled). New sales are switched off. Sales already saved on this device stay here and upload if access is restored. Contact your event organiser.",
+      checkout: "This stall is no longer trading: new sales are switched off.",
+    };
+  }
   if (!access.isEventVendor || access.level === "TRADE") return null;
+  switch (access.reason) {
+    case "CANCELLED":
+      return {
+        tone: "stop",
+        title: "This event was cancelled — sales are switched off",
+        detail: "Contact your event organiser. Sales already saved on this device stay here.",
+        checkout: "The event was cancelled: selling is switched off.",
+      };
+    case "EVENT_ENDED":
+      return {
+        tone: "stop",
+        title: "The event has ended — sales are switched off",
+        detail: "The event's last day is over, so new sales can no longer be taken.",
+        checkout: "The event has ended: selling is switched off.",
+      };
+    case "NO_PAID_COVER_TODAY":
+      return {
+        tone: "stop",
+        title: "No paid event day today — sales are switched off",
+        detail:
+          "Today is an event day, but none of your paid days covers it. To trade today the owner can pay for this day in the manager app (Event), or ask the event organiser.",
+        checkout: "No paid event day covers today: selling is switched off." + PRACTISE,
+      };
+    case "NOT_AN_EVENT_DAY":
+      return {
+        tone: "stop",
+        title: "Not an event day — sales are switched off",
+        detail: "Selling opens again on the next event day you have paid for.",
+        checkout: "Today is not an event day: selling is switched off." + PRACTISE,
+      };
+    case "PREP_WINDOW":
+      return {
+        tone: "info",
+        title: "Set-up mode — the event has not started yet",
+        detail: "Set up your stall now. Selling opens on your first paid event day.",
+        checkout: "Set-up mode: selling opens on your first paid event day." + PRACTISE,
+      };
+    case "CALENDAR_NOT_PUBLISHED":
+      return {
+        tone: "info",
+        title: "Set-up mode — the event days are not published yet",
+        detail: "Selling opens once the organiser publishes the event days and a paid day starts.",
+        checkout: "Set-up mode: the event days are not published yet." + PRACTISE,
+      };
+    case "BEFORE_PREP_WINDOW":
+      return {
+        tone: "stop",
+        title: "The event has not opened yet",
+        detail: "Set-up opens a few days before the event starts.",
+        checkout: "The event has not opened yet: selling is switched off." + PRACTISE,
+      };
+    case "EMAIL_NOT_VERIFIED":
+      return {
+        tone: "stop",
+        title: "Selling is locked until the owner's email is verified",
+        detail: "The owner must use the link in the verification email, or request a new one in the manager app.",
+        checkout: "Selling is locked until the owner's email is verified." + PRACTISE,
+      };
+  }
+  if (access.level === "CONFIGURE") {
+    return {
+      tone: "info",
+      title: "Set-up mode — selling is switched off",
+      detail: "Selling opens when a paid event day covers today.",
+      checkout: "Set-up mode: selling opens when a paid event day covers today." + PRACTISE,
+    };
+  }
+  return {
+    tone: "stop",
+    title: "Your event access has ended — sales are switched off",
+    detail: "There is no paid event day covering today. Contact your event organiser to renew.",
+    checkout: "Your event access has ended: selling is switched off." + PRACTISE,
+  };
+}
+
+export function EventAccessBanner({ access }: { access: EventAccessState }) {
   const stale = access.stale ? " (last known status; reconnect to refresh)" : "";
-  if (access.syncOnly) {
+  if (access.syncOnly && !access.suspended) {
     const deadline = formatDeadline(access.syncOnlyUntil);
     return (
       <div role="alert" data-testid="event-sync-only-banner" className="border-b border-primary/40 bg-primary/10 px-4 py-2.5">
@@ -57,15 +162,17 @@ export function EventAccessBanner({ access }: { access: EventAccessState }) {
       </div>
     );
   }
-  if (access.level === "CONFIGURE") {
+  const copy = describeEventAccess(access);
+  if (!copy) return null;
+  if (copy.tone === "info") {
     return (
       <div role="status" data-testid="event-access-banner" className="border-b border-primary/30 bg-primary/10 px-4 py-2.5">
         <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <CalendarClock className="h-4 w-4 flex-shrink-0" />
-          Set-up mode — trading opens when your paid event day starts
+          {copy.title}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {access.reason ?? ""}
+          {copy.detail}
           {stale}
         </p>
       </div>
@@ -75,10 +182,11 @@ export function EventAccessBanner({ access }: { access: EventAccessState }) {
     <div role="alert" data-testid="event-access-banner" className="border-b border-destructive/40 bg-destructive/10 px-4 py-2.5">
       <p className="flex items-center gap-2 text-sm font-semibold text-destructive">
         <Ban className="h-4 w-4 flex-shrink-0" />
-        Your event access has ended — sales are switched off
+        {copy.title}
       </p>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        {access.reason ?? "There is no paid event day covering today."} Contact your event organiser to renew.{stale}
+        {copy.detail}
+        {stale}
       </p>
     </div>
   );

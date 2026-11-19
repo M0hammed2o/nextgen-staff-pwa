@@ -51,6 +51,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // session so the till can still capture offline sales after a
           // reload; the first real response will re-validate it.
           if (err?.noResponse) return;
+          // A suspended business (e.g. the organiser cancelled the event) is
+          // not a rejected session: the server still enforces the suspension
+          // on every call, and keeping the staff signed in lets the till show
+          // "This stall is no longer trading" with its saved offline sales
+          // instead of dropping to a PIN screen that is refused too. A 401
+          // (apiFetch already redirects) or a disabled account still signs out.
+          if (err?.status === 403 && err.code === "BUSINESS_SUSPENDED") return;
           clearTokens();
           setUser(null);
         })

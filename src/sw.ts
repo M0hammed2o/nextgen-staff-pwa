@@ -1,5 +1,10 @@
 /// <reference lib="webworker" />
-import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
+// workbox-routing is the same 7.4.0 package workbox-precaching already depends
+// on (and uses for precacheAndRoute's own route), like workbox-precaching itself
+// it arrives via vite-plugin-pwa rather than a direct package.json entry.
+import { NavigationRoute, registerRoute } from 'workbox-routing';
+import { NAVIGATION_DENYLIST } from './sw-navigation';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -17,6 +22,21 @@ self.addEventListener('activate', (event) => {
 cleanupOutdatedCaches();
 // self.__WB_MANIFEST is replaced by the actual precache list at build time
 precacheAndRoute(self.__WB_MANIFEST);
+
+// Offline deep links: answer same-origin page navigations (/pos, /orders/123,
+// a reload anywhere) with the precached index.html, the same "navigateFallback"
+// approach Workbox's generateSW uses. index.html is precached with a content
+// revision and every asset it references is hashed, so a deploy replaces it
+// when the new worker installs (skipWaiting + clientsClaim above); it cannot
+// keep serving an old shell once a new worker is active. registerRoute runs
+// after precacheAndRoute, so exact precache hits ("/", "/index.html") are still
+// answered by the precache route first. Registered only when index.html is in
+// the precache (it is in every production build; `vite dev` has no worker).
+try {
+  registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: NAVIGATION_DENYLIST }));
+} catch {
+  // index.html not precached (unexpected build): leave navigations to the network.
+}
 
 self.addEventListener('push', (event: PushEvent) => {
   if (!event.data) return;

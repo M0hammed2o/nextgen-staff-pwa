@@ -25,14 +25,14 @@ import { useBrand } from "@/lib/brand-provider";
 import { RestaurantMark } from "@/components/RestaurantIdentity";
 import { ShoppingBag, Printer, Wallet, PartyPopper, Loader2, RefreshCw, MessageCircle, AlertTriangle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
-import { cachedGet } from "@/lib/offline/snapshot-cache";
+import { cachedGet, tillCurrentQuery } from "@/lib/offline/snapshot-cache";
 import { resolveSaleCustomerPhone } from "@/lib/ready-notify";
 import { useOffline } from "@/lib/offline/offline-context";
 import { useTrainingMode } from "@/lib/offline/training";
 import { useEventAccess } from "@/lib/offline/event-access";
 import type { SnapshotLine } from "@/lib/offline/types";
 import ConnectivityBadge from "@/components/offline/ConnectivityBadge";
-import { TrainingBanner, EventAccessBanner, OfflineWarnings } from "@/components/offline/TillBanners";
+import { TrainingBanner, EventAccessBanner, OfflineWarnings, describeEventAccess } from "@/components/offline/TillBanners";
 import LocalSaleOverlay, { LocalSlip, type LocalSaleView } from "@/components/offline/LocalSaleOverlay";
 import { loadPosDraft, savePosDraft, clearPosDraft, type PosDraftSubmission } from "@/lib/pos-draft";
 import { useTouchField } from "@/hooks/useTouchField";
@@ -72,7 +72,16 @@ export default function Pos() {
   // loaded), and a variant already chosen that still needs the options dialog.
   const [variantItem, setVariantItem] = useState<MenuItemEntry | null>(null);
   const [variantList, setVariantList] = useState<ProductVariant[] | null>(null);
-  const variantTapToken = useRef(0);
+  // Dialogs asked for by tile taps whose lookups finished while another
+  // dialog was open (or in the same tick). Drained one at a time below, so
+  // no tap is ever lost (Souk e2e: a fast second tap used to drop the first).
+  const tapDialogQueue = useRef<Array<{ kind: "variants"; item: MenuItemEntry; list: ProductVariant[] } | { kind: "options"; item: MenuItemEntry }>>([]);
+  const [tapDialogTick, setTapDialogTick] = useState(0);
+  // Tile taps whose variants lookup has not answered yet. Checkout waits for
+  // them: a tap that landed after the payment dialog opened used to change
+  // the total under it, leaving "Exact" tendered at the old amount (Souk e2e:
+  // R25.00 tendered on a R50.00 total).
+  const [pendingTaps, setPendingTaps] = useState(0);
   const [pendingVariant, setPendingVariant] = useState<ProductVariant | null>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanMessage, setScanMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
@@ -142,16 +151,26 @@ export default function Pos() {
     networkMode: "always",
   });
 
-  const { data: till, isFetched: tillFetched } = useQuery({
-    queryKey: ["till-current"],
-    queryFn: () => cachedGet<TillSession | null>(user?.business_id, "till", "/v1/business/pos/till/current"),
-    networkMode: "always",
-  });
+  const {
+    data: till, isFetched: tillFetched, isError: tillUnknown, isFetching: tillChecking, refetch: refetchTill,
+  } = useQuery(tillCurrentQuery<TillSession>(user?.business_id));
   // Offline resilience, training and event gating (src/lib/offline/*).
   const offline = useOffline();
   const training = useTrainingMode();
   const eventAccess = useEventAccess();
   const online = offline.online;
+  // Back online: re-ask the server for everything the till decides on. A
+  // till/menu answer captured while offline (or a failed one) must not stick
+  // until a manual reload (Souk e2e 6a: "till closed" after reconnect).
+  const wasOnlineRef = useRef(online);
+  useEffect(() => {
+    if (online && !wasOnlineRef.current) {
+      for (const key of ["till-current", "pos-items", "pos-categories", "pos-settings", "event-access"]) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    }
+    wasOnlineRef.current = online;
+  }, [online, queryClient]);
   // Training runs a virtual till: no real till session is needed or touched.
   const tillOpen = !!till || training.active;
 
@@ -372,23 +391,48 @@ export default function Pos() {
   // sold without one (VARIANT_REQUIRED, mapped to a clear message), so a
   // failed lookup can never sell the wrong thing, and it never blocks a
   // restaurant sale.
+  //
+  // Every tap is handled on its own: a plain item is added the moment its
+  // lookup answers, and a tap that needs a dialog (variant picker or options)
+  // is queued and opened when no other dialog is showing. There used to be a
+  // "latest tap wins" token here, which silently dropped item A when item B
+  // was tapped before A's lookup came back. Lookups that finish out of order
+  // may add lines out of tap order; each tap still adds exactly one.
   async function loadVariantsFor(item: MenuItemEntry) {
-    const token = ++variantTapToken.current;
     let list: ProductVariant[] = [];
+    setPendingTaps((n) => n + 1);
     try {
       list = await fetchItemVariants(user?.business_id, item);
     } catch {
       list = [];
+    } finally {
+      setPendingTaps((n) => Math.max(0, n - 1));
     }
-    if (token !== variantTapToken.current) return; // a newer tap superseded this one
     if (list.length === 0) {
-      if (itemHasChoices(item)) setOptionsItem(item);
+      if (itemHasChoices(item)) requestTapDialog({ kind: "options", item });
       else addSimpleItem(item);
       return;
     }
-    setVariantList(list);
-    setVariantItem(item);
+    requestTapDialog({ kind: "variants", item, list });
   }
+
+  function requestTapDialog(req: (typeof tapDialogQueue.current)[number]) {
+    tapDialogQueue.current.push(req);
+    setTapDialogTick((t) => t + 1);
+  }
+
+  // Open the next queued dialog once none is showing.
+  useEffect(() => {
+    if (optionsItem || variantItem) return;
+    const next = tapDialogQueue.current.shift();
+    if (!next) return;
+    if (next.kind === "options") {
+      setOptionsItem(next.item);
+    } else {
+      setVariantList(next.list);
+      setVariantItem(next.item);
+    }
+  }, [optionsItem, variantItem, tapDialogTick]);
 
   function handleTileTap(item: MenuItemEntry) {
     void loadVariantsFor(item);
@@ -782,7 +826,10 @@ export default function Pos() {
         // of showing a normal "failed" error — we do not yet know that.
         setPaymentOpen(false);
       } else {
-        if (apiErr?.code === "EVENT_TRADING_NOT_ALLOWED") eventAccess.refresh();
+        // The server says this stall may not sell (event gate, or the whole
+        // business suspended, e.g. after the event was cancelled): re-check
+        // access so the till switches to its "not trading" state.
+        if (apiErr?.code === "EVENT_TRADING_NOT_ALLOWED" || apiErr?.code === "BUSINESS_SUSPENDED") eventAccess.refresh();
         // A real HTTP response came back rejecting the order (validation,
         // till closed, etc.) — the backend's idempotency check runs before
         // any of that, so no order exists under this key. Safe to go back to
@@ -828,7 +875,7 @@ export default function Pos() {
         setRecoveryError(
           isPosNotEnabledError(apiErr)
             ? "POS is not available for this restaurant"
-            : apiErr?.message ?? "That sale could not be completed. Check the details and try again."
+            : friendlyPosError(apiErr, "That sale could not be completed. Check the details and try again.")
         );
       }
     } finally {
@@ -870,9 +917,7 @@ export default function Pos() {
     !training.active && !eventAccess.canTrade
       ? eventAccess.syncOnly
         ? "The event has ended: new sales are switched off. Offline sales saved on this device still upload for a manager to approve."
-        : eventAccess.level === "CONFIGURE"
-        ? "Set-up mode: selling opens when your paid event day starts. You can practise in Training mode."
-        : "Your event access has ended: selling is switched off. You can practise in Training mode."
+        : describeEventAccess(eventAccess)?.checkout ?? "Selling is switched off for this stall."
       : null;
   // BUG-0208: after the event only the upload of queued offline sales is allowed,
   // so the menu (which the server no longer serves) is replaced by that state.
@@ -900,7 +945,11 @@ export default function Pos() {
       onLoyaltyRewardChange={setLoyaltyReward}
       tillOpen={tillOpen}
       errorMessage={null}
-      onCheckout={() => setPaymentOpen(true)}
+      onCheckout={() => {
+        if (pendingTaps > 0) return; // an item is still being added
+        setPaymentOpen(true);
+      }}
+      checkoutPending={pendingTaps > 0}
       checkoutBlockedReason={checkoutBlockedReason}
       // Souk event vendors (KNOWN_BUGS BUG-0210): the opt-in is offered only
       // when the backend reports the ready message can really be sent (the
@@ -1191,7 +1240,33 @@ export default function Pos() {
           be rung up, and the header button alone was too easy to miss on a
           busy screen. This states the blocker in plain words and carries the
           action that clears it, in the place staff are already looking. */}
-      {!tillOpen && !syncOnlyMode && (
+      {/* No answer about the till at all (offline with no device copy, or a
+          server error): that is "unknown", not "closed". Selling stays locked,
+          and the query keeps re-checking on its own (tillCurrentQuery). */}
+      {!tillOpen && !syncOnlyMode && tillUnknown && (
+        <div className="px-4 pt-4" data-testid="till-status-unknown">
+          <div className="rounded-xl border border-warning/40 bg-warning/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">Can't check the till right now</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  The till status could not be loaded{online ? "" : " while offline"}. It is checked again
+                  automatically; selling stays locked until then.
+                </p>
+                <button
+                  onClick={() => void refetchTill()}
+                  disabled={tillChecking}
+                  className="mt-3 h-11 w-full rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground active:opacity-90 disabled:opacity-50 sm:w-auto"
+                >
+                  {tillChecking ? "Checking…" : "Check again"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {!tillOpen && !syncOnlyMode && !tillUnknown && (
         <div className="px-4 pt-4">
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
             <div className="flex items-start gap-3">
